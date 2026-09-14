@@ -235,10 +235,22 @@ table.dt thead th{
 table.dt thead th .arrow{opacity:.4; margin-left:3px; font-size:10px;}
 table.dt thead th.sorted .arrow{opacity:1; color:var(--accent);}
 table.dt tbody td{padding:9px 12px; border-bottom:1px solid var(--border); white-space:nowrap; font-variant-numeric:tabular-nums;}
-table.dt tbody tr:hover{background:var(--surface-2);}
+table.dt tbody tr.row-clickable{cursor:pointer;}
+table.dt tbody tr.row-clickable:hover{background:var(--surface-2);}
 table.dt tbody tr.hl{background:var(--accent-soft);}
 table.dt tbody tr.hl td:first-child{box-shadow:inset 3px 0 0 var(--accent);}
+table.dt tbody tr.expanded{background:var(--surface-2);}
+table.dt tbody tr.expanded td:first-child{box-shadow:inset 3px 0 0 var(--accent);}
 .name-cell{font-weight:700; font-variant-numeric:normal;}
+.row-caret{display:inline-block; width:12px; color:var(--muted); font-weight:800; transition:transform .15s ease; margin-right:2px;}
+tr.expanded .row-caret{transform:rotate(90deg); color:var(--accent);}
+tr.detail-row td{padding:0; border-bottom:1px solid var(--border); background:var(--surface-2); cursor:default;}
+.detail-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:10px 20px; padding:16px 20px;}
+.detail-grid .detail-item{display:flex; flex-direction:column; gap:2px; font-size:12.5px;}
+.detail-grid .detail-item span{color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.03em;}
+.detail-grid .detail-item b{font-size:13.5px; font-variant-numeric:tabular-nums;}
+@media (max-width:900px){ .detail-grid{grid-template-columns:repeat(2,1fr);} }
+.detail-note{margin:0 20px 14px; padding-top:10px; font-size:12px; color:var(--muted); border-top:1px dashed var(--border-strong);}
 .tag{font-size:10.5px; font-weight:800; background:var(--accent); color:#fff; padding:1px 7px; border-radius:999px; margin-left:6px;}
 .flag{font-size:10.5px; font-weight:700; background:var(--warn-soft); color:var(--warn); padding:1px 7px; border-radius:999px; margin-left:5px;}
 
@@ -677,7 +689,7 @@ var TABLE_COLS = {
 };
 function cellHtml(key, d){
   if(key==="r") return d.r+"º";
-  if(key==="n") return "<span class=\"name-cell\">"+d.n+"</span>"+(d.n==="Araguaia"?"<span class=\"tag\">Sua empresa</span>":"")+(d.obs&&d.obs.indexOf("recupera")>-1?"<span class=\"flag\">recuperação judicial</span>":"");
+  if(key==="n") return "<span class=\"row-caret\">›</span><span class=\"name-cell\">"+d.n+"</span>"+(d.n==="Araguaia"?"<span class=\"tag\">Sua empresa</span>":"")+(d.obs&&d.obs.indexOf("recupera")>-1?"<span class=\"flag\">recuperação judicial</span>":"");
   if(key==="uf") return d.uf||"n/d";
   if(key==="s") return d.s;
   var m = METRICS[key];
@@ -686,21 +698,38 @@ function cellHtml(key, d){
   if(m && m.delta) return "<span class=\"stat-delta "+deltaClass(v)+"\" style=\"padding:1px 7px;\">"+deltaArrow(v)+" "+fmtMetric(key,Math.abs(v))+"</span>";
   return fmtMetric(key,v);
 }
-function buildDataTable(rows, cols, hlName){
-  var wrap = el("div");
-  var t = el("table","dt");
-  var thead = el("thead"); var tr = el("tr");
-  cols.forEach(function(c){ var th=el("th", null, TABLE_COLS[c].h); th.dataset.col=c; tr.appendChild(th); });
-  thead.appendChild(tr); t.appendChild(thead);
-  var tbody = el("tbody");
-  rows.forEach(function(d){
-    var row = el("tr", d.n===hlName?"hl":"");
-    cols.forEach(function(c){ var td=el("td", null, cellHtml(c,d)); if(TABLE_COLS[c].num) td.style.textAlign="right"; row.appendChild(td); });
-    tbody.appendChild(row);
+var DETAIL_FIELDS = ["vrec","vluc","marg","rpl","ebt","vebt","ativ","pl","dono","nivg","nivo","liq"];
+function toggleRowDetail(row, d){
+  var tbody = row.parentNode;
+  var next = row.nextElementSibling;
+  var wasOpen = next && next.classList.contains("detail-row");
+  $all("tr.detail-row", tbody).forEach(function(r){ r.remove(); });
+  $all("tr.expanded", tbody).forEach(function(r){ r.classList.remove("expanded"); });
+  if(wasOpen) return;
+
+  row.classList.add("expanded");
+  var dtr = el("tr","detail-row");
+  var td = el("td"); td.colSpan = RANK_COLS.length;
+  var grid = el("div","detail-grid");
+  DETAIL_FIELDS.forEach(function(k){
+    var item = el("div","detail-item");
+    item.innerHTML = "<span>"+METRICS[k].label+"</span><b>"+fmtMetric(k,d[k])+"</b>";
+    grid.appendChild(item);
   });
-  t.appendChild(tbody);
-  wrap.appendChild(t);
-  return wrap;
+  var capItem = el("div","detail-item");
+  capItem.innerHTML = "<span>Origem do capital</span><b>"+(d.cap||"n/d")+"</b>";
+  grid.appendChild(capItem);
+  var rsItem = el("div","detail-item"); rsItem.style.gridColumn="1 / -1";
+  rsItem.innerHTML = "<span>Razão social</span><b>"+(d.rs||"n/d")+"</b>";
+  grid.appendChild(rsItem);
+  td.appendChild(grid);
+  if(d.obs){
+    var obsDiv = el("div","detail-note", d.obs);
+    td.appendChild(obsDiv);
+  }
+  dtr.appendChild(td);
+  tbody.insertBefore(dtr, row.nextSibling);
+  dtr.scrollIntoView({block:"nearest", behavior:"smooth"});
 }
 
 /* ================================================================
@@ -752,8 +781,9 @@ function renderRanking(){
   });
   var tbody = $("#ranking-tbody"); tbody.innerHTML="";
   pageRows.forEach(function(d){
-    var row = el("tr", d.n==="Araguaia"?"hl":"");
+    var row = el("tr", (d.n==="Araguaia"?"hl ":"")+"row-clickable");
     RANK_COLS.forEach(function(c){ var td=el("td",null,cellHtml(c,d)); if(TABLE_COLS[c].num) td.style.textAlign="right"; row.appendChild(td); });
+    row.addEventListener("click", function(){ toggleRowDetail(row, d); });
     tbody.appendChild(row);
   });
 
