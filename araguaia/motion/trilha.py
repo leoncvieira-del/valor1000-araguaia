@@ -283,8 +283,10 @@ for j in range(int((16.5 - 6.0) / 0.125)):
 # respiro do número 13,5–15,0: pad + contagem com blips ascendentes
 add('music', pad([62, 65, 70], 1.6, attack=0.3), 13.5, gain=1.1)
 c0, c1 = ev['count']
-for k, tm in enumerate(np.arange(c0, c1, 1 / 24)):
-    add('sfx', pluck(72 + int(k * 0.9), 0.06, bright=2), tm, pan=0.2 * np.sin(k), gain=0.32)
+PENTA = [65, 67, 69, 72, 74, 77, 79, 81, 84, 86, 89, 91, 93, 96, 98]   # Fá pentatônica: uma nota a cada 2 folhas
+for k in range(30):
+    tm = c0 + (c1 - c0) * k / 30
+    add('sfx', pluck(PENTA[k // 2], 0.08, bright=2), tm, pan=0.5 * np.sin(k * 2.4), gain=0.3)
 # caminho até a assinatura: riser 16,0–16,5
 r = sweep_noise(0.5, 500, 10000, q=0.6) * np.linspace(0, 1, int(0.5 * SR)) ** 1.5
 add('sfx', r, 16.0, gain=0.5)
@@ -315,7 +317,7 @@ def click_sfx(soft=False):
     return x * (0.55 if soft else 1.0)
 
 
-SOFT_UPS = {9.75, 10.42, 12.1, 14.15}
+SOFT_UPS = set(ev.get('soft', []))
 for c in ev['clicks']:
     add('sfx', click_sfx(c in SOFT_UPS), c, pan=0.15, gain=0.9)
     add('verb', click_sfx(), c, gain=0.12)
@@ -341,6 +343,13 @@ for tm, g in ev['impacts']:
 add('sfx', pluck(84, 0.2, bright=2), ev['pops'][0], gain=0.45)        # QR "pop"
 for i, tm in enumerate(ev['pops'][1:2]):
     add('sfx', bandnoise(0.12, 300, 3000) * np.exp(-tt(int(0.12 * SR)) * 30) * 0.5, tm)
+for tm in ev.get('bag', []):                                         # sacaria entra
+    add('sfx', sub_hit(0.35), tm)
+    add('sfx', pluck(77, 0.25, bright=1.5), tm, gain=0.35)
+for k, tm in enumerate(ev.get('grains', [])):                         # grãos caindo na pilha
+    t = tt(int(0.04 * SR))
+    add('sfx', bandnoise(0.04, 1500, 7000) * np.exp(-t * 160) * rng.uniform(0.25, 0.45), tm + rng.uniform(-0.004, 0.004),
+        pan=rng.uniform(-0.5, 0.5))
 for tm in ev['ticks']:
     t = tt(int(0.03 * SR))
     add('sfx', bandnoise(0.03, 2500, 9000) * np.exp(-t * 300) * rng.uniform(0.4, 0.6), tm + rng.uniform(-0.006, 0.006),

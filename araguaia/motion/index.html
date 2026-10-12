@@ -212,121 +212,175 @@ function f1(t) {
   });
 }
 
-// ---------- F2 (8.5 – 11s) : Assistência Técnica ----------
-const LF2 = V ? {cx: 540, cy: 1160, k: .926, vh: 1300} : {cx: 1340, cy: 540, k: .8, vh: 980};
+// ---------- F2 (8.5 – 11s) : Assistência Técnica — a página rola e a foto salta para a tela ----------
+const LF2 = V ? {cx: 540, cy: 980, k: .926, vh: 1500} : {cx: 960, cy: 540, k: .8, vh: 980};
 const f2card = el('div', 'abs card', S.f2);
 f2card.style.width = 1080 * LF2.k + 'px'; f2card.style.height = LF2.vh + 'px';
 const f2inner = el('div', null, f2card); f2inner.style.cssText = 'position:absolute;left:0;top:0;width:100%';
 el('img', null, f2inner).src = R + 'assist-pagina.png';
-const f2sel = el('div', 'sel', f2inner);
-const f2A = text('ASSISTÊNCIA', V ? 112 : 104, 800, C.navy, S.f2, 'letter-spacing:-.02em');
-const f2B = text('TÉCNICA', V ? 112 : 104, 800, C.leaf, S.f2, 'letter-spacing:-.02em');
-const f2C = text('na loja ou no campo', V ? 50 : 48, 500, C.navy, S.f2);
-const f2tx = V ? 540 : 520;
-const f2ty = V ? [180, 300, 395] : [400, 520, 640];
-const SCROLL = 760;
-function f2scroll(t) { return SCROLL * ioCub(P(t, 10.0, 10.72)); }
-function f2Pt(px, py, scr) {
-  return [LF2.cx - 540 * LF2.k + px * LF2.k, LF2.cy - LF2.vh / 2 + (py - scr) * LF2.k];
+// foto-agricultura.png = assist-pagina crop rows 1028..1553, cols 0..840
+const AG = {x: 0, y: 1028, w: 840, h: 525};
+const SC = V ? 480 : 678;
+function f2scroll(t) { const p = P(t, 8.72, 9.2); return SC * (1 - Math.pow(1 - p, 4)); }
+function photo(src, parent) {
+  const d = el('div', 'abs', parent); d.style.overflow = 'hidden'; d.style.transformOrigin = '0 0';
+  const i = el('img', null, d); i.src = R + src;
+  i.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;transform-origin:50% 45%';
+  return d;
 }
-function whip(t, tin, tout) { // x offset for card whip-in from right / whip-out to left
+const fAg = photo('foto-agricultura.png', S.f2);
+const fPe = photo('foto-pecuaria.png', S.f2);
+const seam = el('div', 'abs', S.f2); seam.style.cssText += `width:${W}px;height:${H}px;background:${C.leaf};transform-origin:0 0`;
+S.f2.insertBefore(seam, fPe);  // green seam sits under the pecuária photo
+const shade = el('div', 'abs', S.f2);
+shade.style.cssText += `width:${W}px;height:${H}px;transform-origin:0 0;background:linear-gradient(180deg,rgba(6,19,49,0) 45%,rgba(6,19,49,.75) 100%)`;
+const tA = text('ASSISTÊNCIA', V ? 120 : 132, 800, '#fff', S.f2, 'letter-spacing:-.02em');
+const tB = text('TÉCNICA', V ? 120 : 132, 800, C.leaf, S.f2, 'letter-spacing:-.02em');
+const lAg = text('AGRICULTURA', V ? 86 : 78, 800, '#fff', S.f2, 'letter-spacing:.02em;text-shadow:0 6px 30px rgba(0,0,0,.55)');
+const lPe = text('PECUÁRIA', V ? 86 : 78, 800, '#fff', S.f2, 'letter-spacing:.02em;text-shadow:0 6px 30px rgba(0,0,0,.55)');
+function whip(t, tin, tout) {
   const a = (1 - oExpo(P(t, tin, tin + .38))) * W * .9;
   const b = -iExpo(P(t, tout, tout + .26)) * W * 1.3;
   return {dx: a + b, blur: (1 - oExpo(P(t, tin, tin + .38))) * 28 + iExpo(P(t, tout, tout + .26)) * 36};
 }
+function f2Pt(px, py, scr) { return [LF2.cx - 540 * LF2.k + px * LF2.k, LF2.cy - LF2.vh / 2 + (py - scr) * LF2.k]; }
+function rect(e, x, y, w, h) { Object.assign(e.style, {width: w + 'px', height: h + 'px', transform: `translate(${x}px,${y}px)`}); }
+// split polygons: agricultura keeps the first part, pecuária slides in on a diagonal (site's diagonal cut)
+function splitPoly(p, gap) {
+  if (!V) { const a = lerp(W * 1.15, W * .6, p) + gap, b = lerp(W * 1.0, W * .46, p) + gap; return [[a, 0], [W, 0], [W, H], [b, H]]; }
+  const a = lerp(H * 1.1, H * .58, p) + gap, b = lerp(H * 1.0, H * .44, p) + gap; return [[0, b], [W, a], [W, H], [0, H]];
+}
+const poly = pts => `polygon(${pts.map(([x, y]) => `${x}px ${y}px`).join(',')})`;
 function f2(t) {
   show(S.f2, t >= 8.45 && t < 11.1);
   const w = whip(t, 8.5, 10.82);
-  set(f2card, {x: LF2.cx + w.dx, y: LF2.cy, b: w.blur});
-  f2inner.style.transform = `translateY(${-f2scroll(t) * LF2.k}px)`;
-  f2inner.firstChild.style.width = '100%';
-  // selection "suporte técnico especializado": crop x 118..963, y 779..838
-  const sp = ioCub(P(t, 9.25, 9.7));
-  show(f2sel, t >= 9.25);
-  Object.assign(f2sel.style, {left: (112 * LF2.k) + 'px', top: (776 * LF2.k) + 'px',
-    width: ((975 - 112) * sp * LF2.k) + 'px', height: (66 * LF2.k) + 'px'});
-  [[f2A, 8.62], [f2B, 8.78], [f2C, 10.05]].forEach(([e, ti], i) => {
-    const k = slam(t, ti, .3, i === 2 ? 1.3 : 1.9);
-    set(e, {x: f2tx + w.dx * (i === 2 ? 1.1 : 1), y: f2ty[i], s: k.s, o: k.o, b: k.b + w.blur * .6});
+  const scr = f2scroll(t), vel = Math.abs(f2scroll(t + 1 / 60) - scr) * LF2.k;
+  const lift = ioCub(P(t, 9.18, 9.55));
+  set(f2card, {x: LF2.cx + w.dx, y: LF2.cy, b: w.blur, s: 1 - lift * .12, o: t < 9.6 ? 1 - lift : 0});
+  f2inner.style.transform = `translateY(${-scr * LF2.k}px)`;
+  f2inner.style.filter = vel > .6 ? `blur(${Math.min(vel * .18, 9)}px)` : '';
+  // agricultura photo: from its spot in the scrolled page to full frame
+  const [x0, y0] = f2Pt(AG.x, AG.y, SC);
+  show(fAg, t >= 9.18);
+  rect(fAg, lerp(x0, 0, lift) + w.dx, lerp(y0, 0, lift), lerp(AG.w * LF2.k, W, lift), lerp(AG.h * LF2.k, H, lift));
+  fAg.style.borderRadius = (1 - lift) * 18 + 'px';
+  fAg.style.filter = w.blur > .3 ? `blur(${w.blur}px)` : '';
+  fAg.firstChild.style.transform = `translateY(${V ? -oExpo(P(t, 9.72, 10.1)) * H * .3 : 0}px) scale(${1 + .1 * P(t, 9.2, 11)})`;
+  // diagonal split with pecuária
+  const sp = oExpo(P(t, 9.72, 10.1));
+  const gapPx = 16;
+  show(fPe, t >= 9.72); show(seam, t >= 9.72);
+  // vertical: pecuária lives in the lower box only, so it is not over-zoomed
+  const py0 = V ? H * .4 : 0, shiftPts = pts => pts.map(([x, y]) => [x, y - py0]);
+  [fPe, seam].forEach(e => { rect(e, w.dx, py0, W, H - py0); e.style.filter = w.blur > .3 ? `blur(${w.blur}px)` : ''; });
+  fPe.style.clipPath = poly(shiftPts(splitPoly(sp, gapPx)));
+  seam.style.clipPath = poly(shiftPts(splitPoly(sp, 0)));
+  fPe.firstChild.style.objectPosition = V ? '55% 35%' : '62% 40%';
+  fPe.firstChild.style.transform = `scale(${1.08 - .08 * P(t, 9.72, 11)}) translateX(${(1 - sp) * (V ? 0 : 120)}px)`;
+  // title over the full-frame photo, then one word per side
+  show(shade, t >= 9.2); shade.style.opacity = lift; shade.style.transform = `translateX(${w.dx}px)`;
+  const out = iExpo(P(t, 9.62, 9.82));
+  [[tA, 9.3, V ? H * .72 : H * .68], [tB, 9.4, V ? H * .79 : H * .81]].forEach(([e, ti, y]) => {
+    const k = slam(t, ti, .3, 1.8);
+    set(e, {x: W / 2 - out * W, y, s: k.s, o: k.o, b: k.b + out * 30});
   });
+  const k1 = slam(t, 9.88, .3, 1.8), k2 = slam(t, 10.08, .3, 1.8);
+  set(lAg, {x: (V ? W / 2 : W * .25) + w.dx, y: V ? H * .1 : H * .86, s: k1.s, o: k1.o, b: k1.b + w.blur});
+  set(lPe, {x: (V ? W / 2 : W * .76) + w.dx, y: V ? H * .9 : H * .86, s: k2.s, o: k2.o, b: k2.b + w.blur});
 }
 
-// ---------- F3 (11 – 13.5s) : Barter ----------
-const LF3 = V ? {cx: 540, cy: 1210, k: .926, vh: 1240} : {cx: 590, cy: 540, k: .8, vh: 980};
-const f3card = el('div', 'abs card', S.f3);
-f3card.style.width = 1080 * LF3.k + 'px'; f3card.style.height = LF3.vh + 'px';
-const f3inner = el('div', null, f3card); f3inner.style.cssText = 'position:absolute;left:0;top:0;width:100%';
-el('img', null, f3inner).src = R + 'barter.png';
-const f3sel = el('div', 'sel', f3inner);
+// ---------- F3 (11 – 13.5s) : Barter — insumo vai, grão vem ----------
+const LF3 = V ? {bw: {x: 540, y: 300}, A: {x: 540, y: 820}, B: {x: 540, y: 1480}, sw: {x: 880, y: 1150}, kb: 2.3}
+              : {bw: {x: 960, y: 210}, A: {x: 560, y: 640}, B: {x: 1360, y: 640}, sw: {x: 960, y: 640}, kb: 2.0};
 const barterWord = el('div', 'abs t', S.f3);
-barterWord.style.cssText += `font-size:${V ? 190 : 178}px;font-weight:900;color:${C.navy};letter-spacing:-.03em;display:flex`;
+barterWord.style.cssText += `font-size:${V ? 200 : 190}px;font-weight:900;color:${C.navy};letter-spacing:-.03em;display:flex`;
 const barterLetters = [...'BARTER'].map(ch => { const s = el('span', null, barterWord, ch); s.style.display = 'inline-block'; return s; });
-// the real line "a moeda utilizada é o grão." lifted out of the print (crop x 36..672, y 252..322)
-const QL = {x0: 36, y0: 252, w: 636, h: 70};
-const lift = el('div', 'abs', S.f3);
-lift.style.cssText += `width:${QL.w}px;height:${QL.h}px;background:#fff url(${R}barter.png) no-repeat;background-position:-${QL.x0}px -${QL.y0}px;border-radius:8px;box-shadow:0 24px 50px -16px rgba(14,34,70,.45)`;
-const liftLine = el('div', 'abs', S.f3); liftLine.style.cssText += `height:10px;background:${C.leaf};border-radius:5px;transform-origin:0 50%`;
-const LQ = V ? {x: 540, y: 400, k: 1.42} : {x: 1470, y: 600, k: 1.24};
-const bwPos = V ? {x: 540, y: 205} : {x: 1470, y: 390};
-function f3Pt(px, py) { return [LF3.cx - 540 * LF3.k + px * LF3.k, LF3.cy - LF3.vh / 2 + py * LF3.k]; }
+const bag = el('div', 'abs', S.f3); bag.style.cssText += 'width:238px;height:214px;filter:drop-shadow(0 30px 40px rgba(14,34,70,.35))';
+const bagImg = el('img', null, bag); bagImg.src = R + 'sacaria.png'; bagImg.style.cssText = 'width:100%;border-radius:10px;display:block';
+const GR = [];
+(function () { // deterministic little pile of soy grains
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let r = 0; r < 6; r++) for (let c = 0; c < 8 - r; c++) {
+    const e = el('div', 'abs', S.f3);
+    e.style.cssText += 'width:40px;height:33px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#fbe9b7 0,#e2bd66 45%,#b48834 100%);box-shadow:0 4px 8px rgba(80,55,10,.25)';
+    GR.push({e, dx: (c - (7 - r) / 2) * 38 + (rnd() - .5) * 10, dy: -r * 28 + (rnd() - .5) * 6, r: rnd() * 180, i: GR.length});
+  }
+})();
+const lIn = text('INSUMOS', V ? 60 : 54, 800, C.navy, S.f3, 'letter-spacing:.12em');
+const lGr = text('GRÃO', V ? 60 : 54, 800, C.leaf, S.f3, 'letter-spacing:.12em');
+const swapIcon = el('div', 'abs', S.f3,
+  `<svg width="150" height="150" viewBox="-75 -75 150 150"><g fill="none" stroke="${C.leaf}" stroke-width="11" stroke-linecap="round">
+   <path d="M -52 -18 A 56 56 0 0 1 46 -32"/><path d="M 52 18 A 56 56 0 0 1 -46 32"/></g>
+   <path d="M 58 -52 L 52 -18 L 22 -36 Z" fill="${C.leaf}"/><path d="M -58 52 L -52 18 L -22 36 Z" fill="${C.leaf}"/></svg>`);
+const SWAP = [12.0, 12.45];
+function along(a, b, p, bow) { // arc between two points
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  const nx = V ? bow : 0, ny = V ? 0 : bow;
+  const q = Math.sin(p * Math.PI);
+  return {x: lerp(a.x, b.x, p) + nx * q, y: lerp(a.y, b.y, p) + ny * q};
+}
+function bagPos(t) { return along(LF3.A, LF3.B, ioCub(P(t, ...SWAP)), -150); }
 function f3(t) {
   show(S.f3, t >= 10.9 && t < 13.55);
   const w = whip(t, 10.95, 99);
-  set(f3card, {x: LF3.cx + w.dx, y: LF3.cy, b: w.blur});
-  const sp = ioCub(P(t, 11.5, 12.05));
-  show(f3sel, t >= 11.5);
-  Object.assign(f3sel.style, {left: QL.x0 * LF3.k + 'px', top: (QL.y0 + 4) * LF3.k + 'px',
-    width: QL.w * sp * LF3.k + 'px', height: (QL.h - 8) * LF3.k + 'px'});
-  set(barterWord, {x: bwPos.x, y: bwPos.y, o: t >= 11.2 ? 1 : 0});
+  set(barterWord, {x: LF3.bw.x + w.dx, y: LF3.bw.y, o: t >= 11.0 ? 1 : 0, b: w.blur});
   barterLetters.forEach((s, i) => {
-    const k = slam(t, 11.22 + i * .045, .3, 2.6);
+    const ti = 11.05 + i * .045, k = slam(t, ti, .3, 2.6);
     s.style.opacity = k.o;
-    s.style.transform = `translateY(${(1 - oBack(P(t, 11.22 + i * .045, 11.52 + i * .045), 2.2)) * 70}px) scale(${k.s})`;
+    s.style.transform = `translateY(${(1 - oBack(P(t, ti, ti + .3), 2.2)) * 70}px) scale(${k.s * (1 + .04 * Math.max(0, Math.sin((t - 12.5) * 12)) * P(t, 12.5, 12.6) * (1 - P(t, 12.8, 13)))})`;
   });
-  // lift: from its spot in the card to the right column
-  const [sx, sy] = f3Pt(QL.x0 + QL.w / 2, QL.y0 + QL.h / 2);
-  const p = P(t, 12.15, 12.55), e = oBack(p, 1.5);
-  set(lift, {x: lerp(sx, LQ.x, e), y: lerp(sy, LQ.y, e), s: lerp(LF3.k, LQ.k, e), r: Math.sin(p * Math.PI) * -4,
-    o: t >= 12.15 ? 1 : 0, b: Math.sin(p * Math.PI) * 4});
-  const lw = QL.w * LQ.k * .96;
-  liftLine.style.width = lw + 'px';
-  set(liftLine, {x: LQ.x, y: LQ.y + QL.h * LQ.k / 2 + 26, sx: oExpo(P(t, 12.6, 12.9)), o: t >= 12.6 ? 1 : 0});
+  const pin = P(t, 11.35, 11.7), bp = bagPos(t);
+  set(bag, {x: bp.x + w.dx, y: bp.y + Math.sin(t * 3) * 6, s: LF3.kb * oBack(pin, 2.2), r: (1 - oBack(pin, 2)) * -20 + Math.sin(P(t, ...SWAP) * Math.PI) * 10,
+    o: t >= 11.35 ? 1 : 0});
+  GR.forEach(g => {
+    const ti = 11.45 + g.i * .014, p = P(t, ti, ti + .32);
+    const sp = ioCub(P(t, SWAP[0] + .1 + g.i * .006, SWAP[1] + .12 + g.i * .006));
+    const from = {x: LF3.B.x + g.dx, y: LF3.B.y + 70 + g.dy}, to = {x: LF3.A.x + g.dx, y: LF3.A.y + 70 + g.dy};
+    const pos = along(from, to, sp, 150 + (g.i % 5) * 18);
+    const drop = (1 - oBack(p, 1.6)) * -(H * .55 + g.i * 6);
+    set(g.e, {x: pos.x + w.dx, y: pos.y + (V ? 0 : drop) + (V ? drop * 0 : 0) + (V ? (1 - oBack(p, 1.6)) * (H * .45) : 0),
+      r: g.r + sp * 220, o: t >= ti ? 1 : 0});
+  });
+  // labels travel with their objects
+  const gp = along(LF3.B, LF3.A, ioCub(P(t, SWAP[0] + .1, SWAP[1] + .2)), 150);
+  const kI = slam(t, 11.55, .28, 1.6), kG = slam(t, 11.75, .28, 1.6);
+  const off = V ? 290 : 300;
+  set(lIn, {x: bp.x + w.dx, y: bp.y + off, s: kI.s, o: kI.o, b: kI.b});
+  set(lGr, {x: gp.x + w.dx, y: gp.y + off - (V ? 40 : 30), s: kG.s, o: kG.o, b: kG.b});
+  const sw = oBack(P(t, 11.85, 12.1), 2);
+  set(swapIcon, {x: LF3.sw.x + w.dx, y: LF3.sw.y, s: sw * (V ? 1.1 : 1), r: (V ? 90 : 0) + 180 * ioCub(P(t, ...SWAP)), o: t >= 11.85 ? 1 : 0});
 }
 
-// ---------- NUMBER (13.5 – 16.5s) : +60 lojas em 8 estados ----------
-const numCard = piece('numeros-texto.png', 1020, 480, S.num, 'card');
-const numSel = el('div', 'sel', numCard);
-const LN = V ? {a: {x: 540, y: 900, k: 1.0}, b: {x: 540, y: 330, k: .78}} : {a: {x: 960, y: 540, k: 1.12}, b: {x: 960, y: 172, k: .5}};
-const big = text('+60', V ? 380 : 420, 900, '#fff', S.num, 'letter-spacing:-.04em;font-variant-numeric:tabular-nums');
-const lojas = text('LOJAS', V ? 170 : 160, 800, C.leaf, S.num, 'letter-spacing:-.01em');
-const estados = text('em 8 estados', V ? 80 : 74, 600, '#fff', S.num);
+// ---------- NUMBER (13.5 – 16.5s) : +60 lojas em 8 estados — 60 folhas brotam ----------
+const NL = 60, LT0 = 13.55, LT1 = 15.0, I0 = 24;
+const NR = V ? {r0: 340, r1: 600, sx: .95, sy: 1.55, ls: .62} : {r0: 300, r1: 560, sx: 1.6, sy: .95, ls: .55};
+const NC2 = (NR.r1 * NR.r1 - NR.r0 * NR.r0) / (NL - 1);
+const leaves = Array.from({length: NL}, (_, i) => { const e = el('img', 'abs', S.num); e.src = R + 'folha-solo.png'; return e; });
+const big = text('+0', V ? 300 : 300, 900, '#fff', S.num, 'letter-spacing:-.04em;font-variant-numeric:tabular-nums');
+const lojas = text('LOJAS', V ? 130 : 120, 800, C.leaf, S.num, 'letter-spacing:.02em');
+const estados = text('em 8 estados', V ? 64 : 58, 600, '#fff', S.num);
 const fonte = text('Fonte: araguaia.com.br · Nossa História', 26, 500, 'rgba(255,255,255,.6)', S.num, 'letter-spacing:.04em');
-big.style.transformOrigin = V ? '50% 50%' : '100% 50%';
-lojas.style.transformOrigin = estados.style.transformOrigin = V ? '50% 50%' : '0 50%';
-function numPt(px, py) { const A = LN.a; return [A.x + (px - 510) * A.k, A.y + (py - 240) * A.k]; }
 function num(t) {
   show(S.num, t >= 13.45 && t < 16.55);
-  const pin = oExpo(P(t, 13.5, 13.8)), pm = ioCub(P(t, 14.22, 14.6));
-  const A = LN.a, B = LN.b;
-  set(numCard, {x: lerp(A.x, B.x, pm), y: lerp(A.y, B.y, pm) + (1 - pin) * 160, s: lerp(A.k, B.k, pm) * lerp(.85, 1, pin),
-    o: P(t, 13.5, 13.56), b: (1 - pin) * 14});
-  // selection "mais de 60 lojas": crop x 235..596, line y 226..272
-  const sp = ioCub(P(t, 13.75, 14.1));
-  show(numSel, t >= 13.75);
-  Object.assign(numSel.style, {left: '229px', top: '221px', width: (374 * sp) + 'px', height: '56px'});
-  const n = Math.round(60 * oCub(P(t, 14.3, 15.0)));
+  const step = (LT1 - LT0) / NL;
+  const spin = 14 * ioCub(P(t, 15.2, 16.4));
+  leaves.forEach((e, i) => {
+    const n = I0 + i, r = Math.sqrt(NR.r0 * NR.r0 + NC2 * i), th = n * 137.508 + spin;
+    const a = th * Math.PI / 180;
+    const ti = LT0 + i * step, p = P(t, ti, ti + .3);
+    const wave = Math.max(0, Math.sin(Math.PI * P(t, 15.0 + i * .006, 15.3 + i * .006)));
+    set(e, {x: W / 2 + Math.cos(a) * r * NR.sx, y: H / 2 + Math.sin(a) * r * NR.sy, s: NR.ls * oBack(p, 2.4) * (1 + .35 * wave),
+      r: th + 90 + (1 - oExpo(p)) * -60, o: t >= ti ? 1 : 0});
+  });
+  const n = Math.min(NL, Math.max(0, Math.floor((t - LT0) / step) + 1));
   big.textContent = '+' + n;
-  const land = oBack(P(t, 15.0, 15.25), 3);
-  const k = slam(t, 14.3, .3, 1.6);
-  const bx = V ? 540 : 1010, by = V ? 900 : 660;
-  // vertical: center; landscape: right edge at bx -> translate by half width
-  const bw = ow(big);
-  set(big, {x: V ? bx : bx - bw / 2, y: by, s: k.s * (t > 15.0 ? lerp(1.12, 1, land) : 1), o: k.o, b: k.b});
-  const k2 = slam(t, 15.0, .3, 2), k3 = slam(t, 15.25, .3, 1.5);
-  set(lojas, {x: V ? 540 : 1050 + ow(lojas) / 2, y: V ? 1165 : 595, s: k2.s, o: k2.o, b: k2.b});
-  set(estados, {x: V ? 540 : 1050 + ow(estados) / 2, y: V ? 1295 : 735, s: k3.s, o: k3.o, b: k3.b});
-  set(fonte, {x: W / 2, y: V ? 1830 : 1025, o: P(t, 15.35, 15.6)});
-  // exit: everything scales down into the iris
+  const k = slam(t, LT0, .3, 1.6), land = oBack(P(t, LT1, LT1 + .25), 3);
+  const cy = H / 2;
+  set(big, {x: W / 2, y: cy - (V ? 70 : 60), s: k.s * (t > LT1 ? lerp(1.15, 1, land) : .82), o: k.o, b: k.b});
+  const k2 = slam(t, LT1, .3, 2), k3 = slam(t, LT1 + .25, .3, 1.5);
+  set(lojas, {x: W / 2, y: cy + (V ? 120 : 115), s: k2.s, o: k2.o, b: k2.b});
+  set(estados, {x: W / 2, y: cy + (V ? 215 : 200), s: k3.s, o: k3.o, b: k3.b});
+  set(fonte, {x: W / 2, y: V ? 1830 : 1035, o: P(t, 15.35, 15.6)});
   const ex = iExpo(P(t, 16.1, 16.5));
   S.num.style.transform = `scale(${1 - ex * .25})`; S.num.style.filter = ex > .02 ? `blur(${ex * 18}px)` : '';
 }
@@ -439,32 +493,24 @@ kf(6.92, tp('Faturas')); kf(7.05, tp('Faturas'));
 kf(7.42, tp('NFe')); kf(7.6, tp('NFe'));
 kf(8.3, V ? [W * .8, H * .9] : [W * .78, H * 1.05]);
 ['Pedidos', 'Faturas', 'NFe'].forEach(n => { DOWN.push([f1T[n], f1T[n] + .1]); RIP.push([f1T[n], ...tp(n), C.app]); });
-// F2 selection + drag-scroll
-kf(8.6, V ? [W * .2, H + 80] : [W * .55, H + 80]);
-kf(9.2, f2Pt(116, 808, 0)); kf(9.25, f2Pt(116, 808, 0));
-kf(9.7, f2Pt(968, 808, 0)); kf(9.85, f2Pt(968, 808, 0));
-const dragA = f2Pt(620, 1180, 0);
-kf(9.98, dragA); DOWN.push([9.25, 9.75], [10.0, 10.42]);
-// during drag the cursor follows the page (handled in cursorAt)
-kf(10.42, [dragA[0], dragA[1] - 380 * LF2.k]); kf(10.8, [dragA[0] - 40, dragA[1] - 400 * LF2.k]);
-// F3 selection
-kf(11.15, V ? [W + 60, H * .5] : [W * .5, H + 80]);
-kf(11.45, f3Pt(QL.x0, QL.y0 + 38)); kf(11.5, f3Pt(QL.x0, QL.y0 + 38));
-kf(12.05, f3Pt(QL.x0 + QL.w, QL.y0 + 38)); kf(12.2, f3Pt(QL.x0 + QL.w + 30, QL.y0 + 70));
-kf(13.0, V ? [W * .85, H * .55] : [W * .45, H * .92]);
-DOWN.push([11.5, 12.1]);
-// NUMBER selection
-kf(13.5, V ? [W + 60, H * .7] : [W * .8, H + 80]);
-kf(13.7, numPt(229, 252)); kf(13.75, numPt(229, 252));
-kf(14.1, numPt(603, 252)); kf(14.3, numPt(640, 300)); kf(14.7, V ? [W + 80, H * .8] : [W + 80, H * .9]);
-DOWN.push([13.75, 14.15]);
+// F2 flick-scroll of the real page
+const grab = f2Pt(560, 1250, 0);
+kf(8.5, V ? [W * .8, H + 80] : [W * .7, H + 80]);
+kf(8.7, grab); kf(8.72, grab);
+kf(8.9, [grab[0], grab[1] - 300]); kf(9.5, [grab[0] + 260, H + 120]);
+DOWN.push([8.72, 8.9]);
+// F3 drag the bag onto the grain
+kf(11.6, V ? [W + 60, H * .7] : [W * .75, H + 80]);
+kf(11.97, [LF3.A.x + 40, LF3.A.y + 20]); kf(12.0, [LF3.A.x + 40, LF3.A.y + 20]);
+DOWN.push([12.0, 12.45]);
+kf(12.45, [LF3.B.x + 40, LF3.B.y + 20]); kf(13.2, V ? [W + 80, H * .62] : [W * .88, H + 80]);
 // SIGNATURE click on the domain
 kf(18.0, V ? [W + 60, H * .9] : [W + 60, H * .95]);
 kf(18.45, [LS.x + 140, LS.y + LS.dy + 10]); kf(18.62, [LS.x + 140, LS.y + LS.dy + 10]);
 kf(19.4, [LS.x + 260, LS.y + LS.dy + 150]);
 DOWN.push([18.5, 18.6]); RIP.push([18.5, LS.x + 140, LS.y + LS.dy + 10, C.leaf]);
-RIP.push([9.25, ...f2Pt(116, 808, 0), '#3390ff'], [11.5, ...f3Pt(QL.x0, QL.y0 + 38), '#3390ff'], [13.75, ...numPt(229, 252), '#3390ff']);
-const CURSOR_ON = [[5.95, 8.45], [8.6, 10.9], [11.15, 13.45], [13.5, 14.7], [18.0, 20]];
+RIP.push([8.72, ...grab, C.leaf], [12.0, LF3.A.x + 40, LF3.A.y + 20, C.leaf], [12.45, LF3.B.x + 40, LF3.B.y + 20, C.leaf]);
+const CURSOR_ON = [[5.95, 8.45], [8.5, 9.5], [11.6, 13.2], [18.0, 20]];
 function cursorAt(t) {
   if (!CURSOR_ON.some(([a, b]) => t >= a && t <= b)) return null;
   let x = CK[0][1], y = CK[0][2];
@@ -473,8 +519,7 @@ function cursorAt(t) {
     if (t >= ta && t <= tb) { const p = ioCub(P(t, ta, tb)); x = lerp(xa, xb, p); y = lerp(ya, yb, p); break; }
     if (t > tb) { x = xb; y = yb; }
   }
-  if (t >= 9.98 && t <= 10.42) { y = dragA[1] - f2scroll(t) * LF2.k; }
-  if (t > 10.42 && t < 10.8) { const y0 = dragA[1] - f2scroll(10.42) * LF2.k; y = lerp(y0, dragA[1] - 400 * LF2.k, ioCub(P(t, 10.42, 10.8))); }
+  if (t >= SWAP[0] && t <= SWAP[1]) { const b = bagPos(t); x = b.x + 40; y = b.y + 20; }
   const down = DOWN.some(([a, b]) => t >= a && t <= b);
   return {x, y, down};
 }
@@ -505,18 +550,22 @@ window.seek = function (t) {
 
 // events consumed by the soundtrack generator (single source of truth)
 window.EVENTS = {
-  clicks: [6.5, 7.0, 7.5, 9.25, 9.75, 10.0, 10.42, 11.5, 12.1, 13.75, 14.15, 18.5],
+  clicks: [6.5, 7.0, 7.5, 8.72, 8.9, 12.0, 12.45, 18.5],
+  soft: [8.9, 12.45],
   whoosh: [[2.62, 3.0, 'zoom'], [3.38, 3.55, 's'], [3.62, 3.8, 's'], [3.88, 4.08, 's'], [5.45, 5.95, 'm'], [8.2, 8.62, 'L'],
-           [10.0, 10.7, 'scroll'], [10.8, 11.15, 'L'], [12.1, 12.5, 's'], [13.2, 13.62, 'L'], [16.05, 16.5, 'L']],
-  impacts: [[0, .7], [.5, .7], [1, .8], [1.5, .8], [2, 1.0], [3.0, 1.0], [15.0, 1.0], [16.5, .9]],
-  pops: [4.5, 11.22, 16.52, 16.57, 16.62, 16.67, 16.72, 16.77, 16.82, 16.87, 16.95],
+           [8.72, 9.18, 'scroll'], [9.18, 9.55, 'm'], [9.68, 10.05, 's'], [10.8, 11.15, 'L'], [12.0, 12.45, 's'], [12.12, 12.6, 's'],
+           [13.2, 13.62, 'L'], [16.05, 16.5, 'L']],
+  impacts: [[0, .7], [.5, .7], [1, .8], [1.5, .8], [2, 1.0], [3.0, 1.0], [9.3, .45], [15.0, 1.0], [16.5, .9]],
+  pops: [4.5, 11.05, 16.52, 16.57, 16.62, 16.67, 16.72, 16.77, 16.82, 16.87, 16.95],
+  bag: [11.35],
+  grains: Array.from({length: 33}, (_, i) => 11.45 + i * .014 + .25),
   ticks: Array.from({length: 15}, (_, i) => 17.5 + i * (0.7 / 15)),
-  count: [14.3, 15.0]
+  count: [13.55, 15.0]
 };
 window.READY = (async () => {
   await Promise.all([400, 500, 600, 700, 800, 900].map(w => document.fonts.load(`${w} 100px Poppins`, 'AÃÉÊ+60')));
   await document.fonts.ready;
-  const extra = ['logo-lettering.png', 'logo-folha.png', 'barter.png'].map(f => { const i = new Image(); i.src = R + f; return i; });
+  const extra = ['logo-lettering.png', 'logo-folha.png'].map(f => { const i = new Image(); i.src = R + f; return i; });
   await Promise.all([...document.images, ...extra].map(i => i.decode().catch(() => {})));
   await new Promise(r => setTimeout(r, 50));
   seek(0); return true;
