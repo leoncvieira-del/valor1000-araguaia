@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Araguaia Motion</title>
+<style>
+@font-face{font-family:Poppins;font-weight:400;src:url(../assets/fontes/poppins-latin-400-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:500;src:url(../assets/fontes/poppins-latin-500-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:600;src:url(../assets/fontes/poppins-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:700;src:url(../assets/fontes/poppins-latin-700-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:800;src:url(../assets/fontes/poppins-latin-800-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:900;src:url(../assets/fontes/poppins-latin-900-normal.woff2) format('woff2')}
+html,body{margin:0;padding:0;background:#000;overflow:hidden}
+#stage{position:relative;overflow:hidden;font-family:Poppins,sans-serif;-webkit-font-smoothing:antialiased}
+.abs{position:absolute;left:0;top:0;transform-origin:50% 50%}
+.layer{position:absolute;left:0;top:0;width:100%;height:100%}
+.t{white-space:nowrap;line-height:1}
+.line{position:absolute;left:0;width:100%;display:flex;justify-content:center;gap:.22em;line-height:1;white-space:nowrap}
+.line span{display:inline-block;transform-origin:50% 60%}
+.piece{overflow:hidden;border-radius:16px;box-shadow:0 30px 70px -10px rgba(0,0,0,.55),0 0 0 1.5px rgba(255,255,255,.14)}
+.piece img,.card img{display:block;width:100%}
+.card{overflow:hidden;border-radius:26px;background:#fff;box-shadow:0 50px 90px -25px rgba(14,34,70,.45),0 0 0 1px rgba(14,34,70,.08)}
+.sel{position:absolute;background:rgba(51,144,255,.32);border-radius:4px}
+.ripple{width:140px;height:140px;border-radius:50%;border:7px solid #64B240;box-sizing:border-box}
+.bar{position:absolute;top:-10%;height:120%}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+// ---------- setup ----------
+const Q = new URLSearchParams(location.search);
+const W = +Q.get('w') || 1920, H = +Q.get('h') || 1080, V = H > W;
+const R = '../assets/recortes/';
+const C = {navy:'#1E3D6C', deep:'#061331', red:'#CF312E', leaf:'#60BC4D', app:'#64B240', gray:'#F0F0F0'};
+const stage = document.getElementById('stage');
+stage.style.width = W + 'px'; stage.style.height = H + 'px';
+
+// ---------- easing ----------
+const cl = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const P = (t, a, b) => cl((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const oExpo = p => p >= 1 ? 1 : 1 - Math.pow(2, -10 * p);
+const iExpo = p => p <= 0 ? 0 : Math.pow(2, 10 * (p - 1));
+const oCub = p => 1 - Math.pow(1 - p, 3);
+const ioCub = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const oBack = (p, s = 1.70158) => { const c = s + 1; return 1 + c * Math.pow(p - 1, 3) + s * Math.pow(p - 1, 2); };
+
+// ---------- dom helpers ----------
+function el(tag, cls, parent, html) {
+  const e = document.createElement(tag); if (cls) e.className = cls;
+  if (html != null) e.innerHTML = html; (parent || stage).appendChild(e); return e;
+}
+function ow(e) { const d = e.style.display; e.style.display = ''; const w = e.offsetWidth; e.style.display = d; return w; }
+function layer(parent) { return el('div', 'layer', parent); }
+function show(e, v) { e.style.display = v ? '' : 'none'; }
+// o: x,y = center; s,sx,sy scale; r rotation; o opacity; b blur
+function set(e, o) {
+  if (o.o === 0) { e.style.display = 'none'; return; }
+  e.style.display = '';
+  const s = o.s ?? 1;
+  e.style.transform = `translate(${o.x ?? 0}px,${o.y ?? 0}px) translate(-50%,-50%) rotate(${o.r ?? 0}deg) scale(${s * (o.sx ?? 1)},${s * (o.sy ?? 1)})`;
+  e.style.opacity = o.o ?? 1;
+  e.style.filter = o.b > .3 ? `blur(${o.b}px)` : '';
+}
+function piece(src, w, h, parent, cls = 'piece') {
+  const d = el('div', 'abs ' + cls, parent); d.style.width = w + 'px'; d.style.height = h + 'px';
+  const i = el('img', null, d); i.src = R + src; return d;
+}
+function text(str, size, weight, color, parent, extra = '') {
+  const d = el('div', 'abs t', parent, str);
+  d.style.cssText += `font-size:${size}px;font-weight:${weight};color:${color};${extra}`;
+  return d;
+}
+// kinetic slam: returns transform params for a word that lands at ti
+function slam(t, ti, d = .28, from = 2.1) {
+  const p = P(t, ti, ti + d), e = oExpo(p);
+  return {s: lerp(from, 1, e), o: t < ti ? 0 : P(t, ti, ti + .04), b: (1 - e) * 16};
+}
+
+// ---------- global layers ----------
+const bg = el('div', 'layer', stage);
+const cam = el('div', 'layer', stage);
+const deco = layer(cam);           // site line motif
+const S = {};                       // scene layers
+['hook', 'prod', 'f1', 'f2', 'f3', 'num', 'sig'].forEach(k => S[k] = layer(cam));
+const fx = layer(cam);              // ripples
+const cursor = el('div', 'abs', cam,
+  '<svg width="52" height="72" viewBox="0 0 20 28"><path d="M1.5 1.5 L1.5 22.5 L6.7 17.6 L10.2 26 L13.8 24.4 L10.4 16.3 L17.4 16.3 Z" fill="#fff" stroke="#10151c" stroke-width="1.5" stroke-linejoin="round"/></svg>');
+cursor.style.filter = 'drop-shadow(0 6px 10px rgba(0,0,0,.35))';
+cursor.style.transformOrigin = '0 0';
+const bars = layer(stage), flash = el('div', 'layer', stage), iris = el('div', 'layer', stage);
+flash.style.background = '#fff'; iris.style.background = '#fff';
+
+// ---------- HOOK (0 – 3s) : "O CAMPO NÃO PODE ESPERAR." ----------
+const hk = {size: V ? 205 : 250};
+const hookLines = V ? [['O', 'CAMPO'], ['NÃO'], ['PODE']] : [['O', 'CAMPO'], ['NÃO', 'PODE']];
+const hookTimes = {O: 0, CAMPO: .5, 'NÃO': 1, PODE: 1.5};
+const hookWords = [];
+hookLines.forEach((ln, i) => {
+  const d = el('div', 'line', S.hook);
+  d.style.cssText += `font-size:${hk.size}px;font-weight:900;color:#fff;letter-spacing:-.02em;`;
+  const gapY = V ? 250 : 290;
+  d.style.top = (H / 2 + (i - (hookLines.length - 1) / 2) * gapY - hk.size * .55) + 'px';
+  ln.forEach(w => {
+    const s = el('span', null, d, w);
+    if (w === 'NÃO') s.style.cssText = `background:${C.red};padding:0 .14em;border-radius:.06em`;
+    hookWords.push({e: s, t: hookTimes[w], w, grow: d.children.length > 1});
+  });
+});
+const esperar = text('ESPERAR.', 300, 900, '#fff', S.hook, 'letter-spacing:-.03em');
+const hookStripes = el('div', 'layer', S.hook);
+hookStripes.style.cssText += 'opacity:.07;background:repeating-linear-gradient(-60deg,#fff 0 2px,transparent 2px 120px)';
+S.hook.insertBefore(hookStripes, S.hook.firstChild);
+
+function hook(t) {
+  show(S.hook, t < 3.05);
+  hookStripes.style.transform = `translateX(${-t * 90}px)`;
+  hookStripes.style.display = t < 2 ? '' : 'none';
+  hookWords.forEach(w => {
+    const k = slam(t, w.t, .3, 2.4);
+    w.e.style.opacity = t < 2 ? k.o : 0;
+    w.e.style.transform = `scale(${k.s}) translateY(${(1 - oExpo(P(t, w.t, w.t + .3))) * 40}px)`;
+    w.e.style.filter = k.b > .3 ? `blur(${k.b}px)` : '';
+    if (w.grow) { w.nat = w.nat || ow(w.e) + hk.size * .22; w.e.style.marginLeft = (-(1 - oExpo(P(t, w.t, w.t + .22))) * w.nat) + 'px'; }
+    if (w.w === 'NÃO') w.e.style.clipPath = `inset(0 ${(1 - oExpo(P(t, 1, 1.14))) * 100}% 0 0)`;
+  });
+  if (t >= 2) {
+    const fit = (V ? .9 : .88) * W / ow(esperar);
+    const k = slam(t, 2, .32, 1.5);
+    const zp = iExpo(P(t, 2.6, 3.0));
+    set(esperar, {x: W / 2, y: H / 2 + (V ? 0 : 10), s: fit * k.s * Math.exp(zp * Math.log(22)),
+      sx: 1 + .05 * oCub(P(t, 2.5, 2.62)), o: k.o * (1 - P(t, 2.9, 3.0)), b: k.b + zp * 24});
+  } else set(esperar, {o: 0});
+}
+
+// ---------- PRODUCT (3 – 6s) : App Araguaia se monta ----------
+const LP = V ? {
+  phone: {x: 540, y: 590, k: 1.42},
+  chegou: {x: 540, y: 1085, k: 1.4}, titulo: {x: 540, y: 1205, k: 1.4},
+  tag: {x: 540, y: 1440, k: 1.3}, qr: {x: 540, y: 1740, k: 1.12}, comece: {x: 540, y: 1885, k: 1.12}
+} : {
+  phone: {x: 590, y: 545, k: 1.52},
+  chegou: {x: 1400, y: 205, k: 1.32}, titulo: {x: 1400, y: 320, k: 1.32},
+  tag: {x: 1400, y: 545, k: 1.3}, qr: {x: 1400, y: 862, k: 1.12}, comece: {x: 1400, y: 1018, k: 1.12}
+};
+const phone = piece('app-celular.png', 515, 520, S.prod);
+phone.style.borderRadius = '28px';
+const pc = {
+  chegou: piece('app-chegou-o.png', 415, 82, S.prod), titulo: piece('app-titulo.png', 415, 91, S.prod),
+  tag: piece('app-tagline.png', 415, 230, S.prod), qr: piece('app-qr.png', 345, 220, S.prod),
+  comece: piece('app-comece.png', 360, 40, S.prod)
+};
+pc.comece.style.borderRadius = '8px';
+const pcIn = {chegou: 3.5, titulo: 3.75, tag: 4.0, qr: 4.5, comece: 4.75};
+// F1 layout for the phone (match-cut continues the same element)
+const LF1 = V ? {x: 540, y: 690, k: 1.95} : {x: 560, y: 410, k: 2.08};
+function phoneState(t) {
+  const A = LP.phone;
+  if (t < 5.5) {
+    const p = P(t, 3.0, 3.5), e = oBack(p, 1.4);
+    const drift = P(t, 3.5, 5.5);
+    return {x: A.x + (V ? 0 : -drift * 14), y: lerp(A.y + H * .9, A.y, e) - drift * 10,
+      s: A.k * lerp(.55, 1, e) * (1 + .03 * drift), r: lerp(22, 0, e), b: (1 - oExpo(p)) * 10};
+  }
+  const p = ioCub(P(t, 5.5, 6.1));
+  return {x: lerp(A.x - (V ? 0 : 14), LF1.x, p), y: lerp(A.y - 10, LF1.y, p), s: lerp(A.k * 1.03, LF1.k, p), r: 0,
+    b: Math.sin(p * Math.PI) * 6};
+}
+function prod(t) {
+  show(S.prod, t >= 2.95 && t < 8.55);
+  set(phone, phoneState(t));
+  Object.entries(pc).forEach(([k, e], i) => {
+    const A = LP[k], ti = pcIn[k];
+    const p = P(t, ti, ti + .32), e1 = oExpo(p), eb = oBack(p, 2);
+    let o = {x: A.x, y: A.y, s: A.k, o: t < ti ? 0 : P(t, ti, ti + .05)};
+    if (k === 'chegou') { o.x += (1 - e1) * W * .45; o.b = (1 - e1) * 30; o.sx = 1 + (1 - e1) * .6; }
+    if (k === 'titulo') { o.s *= lerp(1.9, 1, e1); o.b = (1 - e1) * 14; }
+    if (k === 'tag') e.style.clipPath = `inset(0 ${(1 - e1) * 100}% 0 0 round 16px)`;
+    if (k === 'qr') { o.s *= lerp(0, 1, eb); o.r = (1 - eb) * -14; }
+    if (k === 'comece') { o.y += (1 - e1) * 80; }
+    // fly out toward the right (landscape) / bottom (vertical), staggered
+    const q = iExpo(P(t, 5.45 + i * .04, 5.85 + i * .04));
+    if (V) o.y += q * H * .8; else o.x += q * W * .7;
+    o.b = (o.b || 0) + q * 30;
+    if (t > 6.1) o.o = 0;
+    set(e, o);
+  });
+}
+
+// ---------- F1 (6 – 8.5s) : Pedidos · Faturas · NFe ----------
+// tap targets in app-celular.png pixel coords (from the real print)
+const TAP = {Pedidos: [317, 493], Faturas: [398, 488], NFe: [477, 483]};
+const f1T = {Pedidos: 6.5, Faturas: 7.0, NFe: 7.5};
+function phonePt(px, py) { return [LF1.x + (px - 257.5) * LF1.k, LF1.y + (py - 260) * LF1.k]; }
+const f1Kick = text('NO APP ARAGUAIA', V ? 40 : 40, 700, C.app, S.f1, 'letter-spacing:.24em');
+const f1Labels = ['Pedidos', 'Faturas', 'NFe'].map(w => ({w, e: text(w.toUpperCase() === 'NFE' ? 'NFe' : w.toUpperCase(), V ? 150 : 150, 800, '#fff', S.f1, 'letter-spacing:-.02em')}));
+const f1X = V ? 540 : 1450;
+const f1Y = V ? [1380, 1550, 1720] : [420, 590, 760];
+function f1(t) {
+  show(S.f1, t >= 5.9 && t < 8.55);
+  const k = slam(t, 6.05, .3, 1.4);
+  set(f1Kick, {x: f1X, y: V ? 1250 : 285, s: k.s, o: k.o, b: k.b});
+  f1Labels.forEach((L, i) => {
+    const ti = f1T[L.w], k = slam(t, ti, .26, 2.2);
+    const next = [6.5, 7.0, 7.5][i + 1];
+    const dim = next && t > next ? .32 : 1;
+    set(L.e, {x: f1X, y: f1Y[i], s: k.s, o: k.o * dim, b: k.b});
+  });
+}
+
+// ---------- F2 (8.5 – 11s) : Assistência Técnica ----------
+const LF2 = V ? {cx: 540, cy: 1160, k: .926, vh: 1300} : {cx: 1340, cy: 540, k: .8, vh: 980};
+const f2card = el('div', 'abs card', S.f2);
+f2card.style.width = 1080 * LF2.k + 'px'; f2card.style.height = LF2.vh + 'px';
+const f2inner = el('div', null, f2card); f2inner.style.cssText = 'position:absolute;left:0;top:0;width:100%';
+el('img', null, f2inner).src = R + 'assist-pagina.png';
+const f2sel = el('div', 'sel', f2inner);
+const f2A = text('ASSISTÊNCIA', V ? 112 : 104, 800, C.navy, S.f2, 'letter-spacing:-.02em');
+const f2B = text('TÉCNICA', V ? 112 : 104, 800, C.leaf, S.f2, 'letter-spacing:-.02em');
+const f2C = text('na loja ou no campo', V ? 50 : 48, 500, C.navy, S.f2);
+const f2tx = V ? 540 : 520;
+const f2ty = V ? [180, 300, 395] : [400, 520, 640];
+const SCROLL = 760;
+function f2scroll(t) { return SCROLL * ioCub(P(t, 10.0, 10.72)); }
+function f2Pt(px, py, scr) {
+  return [LF2.cx - 540 * LF2.k + px * LF2.k, LF2.cy - LF2.vh / 2 + (py - scr) * LF2.k];
+}
+function whip(t, tin, tout) { // x offset for card whip-in from right / whip-out to left
+  const a = (1 - oExpo(P(t, tin, tin + .38))) * W * .9;
+  const b = -iExpo(P(t, tout, tout + .26)) * W * 1.3;
+  return {dx: a + b, blur: (1 - oExpo(P(t, tin, tin + .38))) * 28 + iExpo(P(t, tout, tout + .26)) * 36};
+}
+function f2(t) {
+  show(S.f2, t >= 8.45 && t < 11.1);
+  const w = whip(t, 8.5, 10.82);
+  set(f2card, {x: LF2.cx + w.dx, y: LF2.cy, b: w.blur});
+  f2inner.style.transform = `translateY(${-f2scroll(t) * LF2.k}px)`;
+  f2inner.firstChild.style.width = '100%';
+  // selection "suporte técnico especializado": crop x 118..963, y 779..838
+  const sp = ioCub(P(t, 9.25, 9.7));
+  show(f2sel, t >= 9.25);
+  Object.assign(f2sel.style, {left: (112 * LF2.k) + 'px', top: (776 * LF2.k) + 'px',
+    width: ((975 - 112) * sp * LF2.k) + 'px', height: (66 * LF2.k) + 'px'});
+  [[f2A, 8.62], [f2B, 8.78], [f2C, 10.05]].forEach(([e, ti], i) => {
+    const k = slam(t, ti, .3, i === 2 ? 1.3 : 1.9);
+    set(e, {x: f2tx + w.dx * (i === 2 ? 1.1 : 1), y: f2ty[i], s: k.s, o: k.o, b: k.b + w.blur * .6});
+  });
+}
+
+// ---------- F3 (11 – 13.5s) : Barter ----------
+const LF3 = V ? {cx: 540, cy: 1210, k: .926, vh: 1240} : {cx: 590, cy: 540, k: .8, vh: 980};
+const f3card = el('div', 'abs card', S.f3);
+f3card.style.width = 1080 * LF3.k + 'px'; f3card.style.height = LF3.vh + 'px';
+const f3inner = el('div', null, f3card); f3inner.style.cssText = 'position:absolute;left:0;top:0;width:100%';
+el('img', null, f3inner).src = R + 'barter.png';
+const f3sel = el('div', 'sel', f3inner);
+const barterWord = el('div', 'abs t', S.f3);
+barterWord.style.cssText += `font-size:${V ? 190 : 178}px;font-weight:900;color:${C.navy};letter-spacing:-.03em;display:flex`;
+const barterLetters = [...'BARTER'].map(ch => { const s = el('span', null, barterWord, ch); s.style.display = 'inline-block'; return s; });
+// the real line "a moeda utilizada é o grão." lifted out of the print (crop x 36..672, y 252..322)
+const QL = {x0: 36, y0: 252, w: 636, h: 70};
+const lift = el('div', 'abs', S.f3);
+lift.style.cssText += `width:${QL.w}px;height:${QL.h}px;background:#fff url(${R}barter.png) no-repeat;background-position:-${QL.x0}px -${QL.y0}px;border-radius:8px;box-shadow:0 24px 50px -16px rgba(14,34,70,.45)`;
+const liftLine = el('div', 'abs', S.f3); liftLine.style.cssText += `height:10px;background:${C.leaf};border-radius:5px;transform-origin:0 50%`;
+const LQ = V ? {x: 540, y: 400, k: 1.42} : {x: 1470, y: 600, k: 1.24};
+const bwPos = V ? {x: 540, y: 205} : {x: 1470, y: 390};
+function f3Pt(px, py) { return [LF3.cx - 540 * LF3.k + px * LF3.k, LF3.cy - LF3.vh / 2 + py * LF3.k]; }
+function f3(t) {
+  show(S.f3, t >= 10.9 && t < 13.55);
+  const w = whip(t, 10.95, 99);
+  set(f3card, {x: LF3.cx + w.dx, y: LF3.cy, b: w.blur});
+  const sp = ioCub(P(t, 11.5, 12.05));
+  show(f3sel, t >= 11.5);
+  Object.assign(f3sel.style, {left: QL.x0 * LF3.k + 'px', top: (QL.y0 + 4) * LF3.k + 'px',
+    width: QL.w * sp * LF3.k + 'px', height: (QL.h - 8) * LF3.k + 'px'});
+  set(barterWord, {x: bwPos.x, y: bwPos.y, o: t >= 11.2 ? 1 : 0});
+  barterLetters.forEach((s, i) => {
+    const k = slam(t, 11.22 + i * .045, .3, 2.6);
+    s.style.opacity = k.o;
+    s.style.transform = `translateY(${(1 - oBack(P(t, 11.22 + i * .045, 11.52 + i * .045), 2.2)) * 70}px) scale(${k.s})`;
+  });
+  // lift: from its spot in the card to the right column
+  const [sx, sy] = f3Pt(QL.x0 + QL.w / 2, QL.y0 + QL.h / 2);
+  const p = P(t, 12.15, 12.55), e = oBack(p, 1.5);
+  set(lift, {x: lerp(sx, LQ.x, e), y: lerp(sy, LQ.y, e), s: lerp(LF3.k, LQ.k, e), r: Math.sin(p * Math.PI) * -4,
+    o: t >= 12.15 ? 1 : 0, b: Math.sin(p * Math.PI) * 4});
+  const lw = QL.w * LQ.k * .96;
+  liftLine.style.width = lw + 'px';
+  set(liftLine, {x: LQ.x, y: LQ.y + QL.h * LQ.k / 2 + 26, sx: oExpo(P(t, 12.6, 12.9)), o: t >= 12.6 ? 1 : 0});
+}
+
+// ---------- NUMBER (13.5 – 16.5s) : +60 lojas em 8 estados ----------
+const numCard = piece('numeros-texto.png', 1020, 480, S.num, 'card');
+const numSel = el('div', 'sel', numCard);
+const LN = V ? {a: {x: 540, y: 900, k: 1.0}, b: {x: 540, y: 330, k: .78}} : {a: {x: 960, y: 540, k: 1.12}, b: {x: 960, y: 172, k: .5}};
+const big = text('+60', V ? 380 : 420, 900, '#fff', S.num, 'letter-spacing:-.04em;font-variant-numeric:tabular-nums');
+const lojas = text('LOJAS', V ? 170 : 160, 800, C.leaf, S.num, 'letter-spacing:-.01em');
+const estados = text('em 8 estados', V ? 80 : 74, 600, '#fff', S.num);
+const fonte = text('Fonte: araguaia.com.br · Nossa História', 26, 500, 'rgba(255,255,255,.6)', S.num, 'letter-spacing:.04em');
+big.style.transformOrigin = V ? '50% 50%' : '100% 50%';
+lojas.style.transformOrigin = estados.style.transformOrigin = V ? '50% 50%' : '0 50%';
+function numPt(px, py) { const A = LN.a; return [A.x + (px - 510) * A.k, A.y + (py - 240) * A.k]; }
+function num(t) {
+  show(S.num, t >= 13.45 && t < 16.55);
+  const pin = oExpo(P(t, 13.5, 13.8)), pm = ioCub(P(t, 14.22, 14.6));
+  const A = LN.a, B = LN.b;
+  set(numCard, {x: lerp(A.x, B.x, pm), y: lerp(A.y, B.y, pm) + (1 - pin) * 160, s: lerp(A.k, B.k, pm) * lerp(.85, 1, pin),
+    o: P(t, 13.5, 13.56), b: (1 - pin) * 14});
+  // selection "mais de 60 lojas": crop x 235..596, line y 226..272
+  const sp = ioCub(P(t, 13.75, 14.1));
+  show(numSel, t >= 13.75);
+  Object.assign(numSel.style, {left: '229px', top: '221px', width: (374 * sp) + 'px', height: '56px'});
+  const n = Math.round(60 * oCub(P(t, 14.3, 15.0)));
+  big.textContent = '+' + n;
+  const land = oBack(P(t, 15.0, 15.25), 3);
+  const k = slam(t, 14.3, .3, 1.6);
+  const bx = V ? 540 : 1010, by = V ? 900 : 660;
+  // vertical: center; landscape: right edge at bx -> translate by half width
+  const bw = ow(big);
+  set(big, {x: V ? bx : bx - bw / 2, y: by, s: k.s * (t > 15.0 ? lerp(1.12, 1, land) : 1), o: k.o, b: k.b});
+  const k2 = slam(t, 15.0, .3, 2), k3 = slam(t, 15.25, .3, 1.5);
+  set(lojas, {x: V ? 540 : 1050 + ow(lojas) / 2, y: V ? 1165 : 595, s: k2.s, o: k2.o, b: k2.b});
+  set(estados, {x: V ? 540 : 1050 + ow(estados) / 2, y: V ? 1295 : 735, s: k3.s, o: k3.o, b: k3.b});
+  set(fonte, {x: W / 2, y: V ? 1830 : 1025, o: P(t, 15.35, 15.6)});
+  // exit: everything scales down into the iris
+  const ex = iExpo(P(t, 16.1, 16.5));
+  S.num.style.transform = `scale(${1 - ex * .25})`; S.num.style.filter = ex > .02 ? `blur(${ex * 18}px)` : '';
+}
+
+// ---------- SIGNATURE (16.5 – 20s) : logo + araguaia.com.br ----------
+const LS = V ? {x: 540, y: 840, k: 1.62, dy: 235} : {x: 960, y: 455, k: 1.58, dy: 215};
+const logoW = 574 * LS.k, logoH = 163 * LS.k;
+const logoBox = el('div', 'abs', S.sig); logoBox.style.width = logoW + 'px'; logoBox.style.height = logoH + 'px';
+const LETTERS = [[6, 75], [81, 148], [155, 223], [229, 300], [308, 374], [380, 449], [460, 478], [486, 568]];
+const letterEls = LETTERS.map(([a, b]) => {
+  const d = el('div', null, logoBox);
+  d.style.cssText = `position:absolute;left:${(a - 3) * LS.k}px;top:0;width:${(b - a + 6) * LS.k}px;height:${logoH}px;` +
+    `background:url(${R}logo-lettering.png) no-repeat;background-size:${logoW}px ${logoH}px;background-position:-${(a - 3) * LS.k}px 0;transform-origin:50% 100%`;
+  return d;
+});
+const leaf = el('div', null, logoBox);
+leaf.style.cssText = `position:absolute;left:0;top:0;width:${logoW}px;height:${logoH}px;background:url(${R}logo-folha.png) no-repeat;background-size:100% 100%;transform-origin:${468.5 * LS.k}px ${87 * LS.k}px`;
+const DOMAIN = 'araguaia.com.br';
+const dom = text('', V ? 70 : 64, 600, C.navy, S.sig, 'letter-spacing:.01em');
+const domMeasure = text(DOMAIN, V ? 70 : 64, 600, C.navy, S.sig, 'letter-spacing:.01em;visibility:hidden');
+const domLine = el('div', 'abs', S.sig); domLine.style.cssText += `height:7px;background:${C.leaf};border-radius:4px;transform-origin:0 50%`;
+const caret = el('div', 'abs', S.sig); caret.style.cssText += `width:5px;height:${V ? 76 : 70}px;background:${C.leaf}`;
+function sig(t) {
+  show(S.sig, t >= 16.3);
+  const z = 1 + .045 * ioCub(P(t, 17.2, 20));
+  S.sig.style.transform = `scale(${z})`;
+  set(logoBox, {x: LS.x, y: LS.y});
+  letterEls.forEach((d, i) => {
+    const ti = 16.52 + i * .05, p = P(t, ti, ti + .34);
+    d.style.opacity = P(t, ti, ti + .04);
+    d.style.transform = `translateY(${(1 - oExpo(p)) * 60}px) scale(${oBack(p, 2.4)})`;
+  });
+  const lp = P(t, 16.95, 17.4);
+  leaf.style.opacity = P(t, 16.95, 17.0);
+  leaf.style.transform = `rotate(${lerp(-38, 0, oBack(lp, 2)) + Math.sin((t - 17.4) * 3) * 1.2 * P(t, 17.4, 18)}deg) scale(${oBack(lp, 2.6)})`;
+  const n = Math.floor(P(t, 17.5, 18.2) * DOMAIN.length + .001);
+  dom.textContent = DOMAIN.slice(0, n);
+  const dw = ow(domMeasure), dy = LS.y + LS.dy, cw = ow(dom);
+  set(domMeasure, {x: LS.x, y: dy});
+  set(dom, {x: LS.x - dw / 2 + cw / 2, y: dy, o: t >= 17.5 ? 1 : 0});
+  const blink = t < 18.2 || (Math.floor((t - 18.2) * 4) % 2 === 0 && t < 18.5);
+  set(caret, {x: LS.x - dw / 2 + cw + 8, y: dy, o: t >= 17.45 && blink ? 1 : 0});
+  domLine.style.width = dw + 'px';
+  set(domLine, {x: LS.x, y: dy + (V ? 58 : 52), sx: oExpo(P(t, 18.5, 18.85)), o: t >= 18.5 ? 1 : 0});
+}
+
+// ---------- background, deco lines, bars, iris ----------
+function bgAt(t) {
+  if (t < 2) return `radial-gradient(120% 90% at 50% 40%, #0b2050 0%, ${C.deep} 60%, #020814 100%)`;
+  if (t < 3) return C.red;
+  if (t < 8.5) return 'radial-gradient(110% 90% at 30% 45%, #0d2c6e 0%, #081a42 45%, #020817 100%)';
+  if (t < 13.5) return C.gray;
+  if (t < 16.5) return `radial-gradient(110% 100% at 50% 60%, #24497f 0%, ${C.navy} 45%, #0c1f3d 100%)`;
+  return '#fff';
+}
+let lastBg = '';
+// site motif: navy + green parallel curves
+deco.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="position:absolute;left:0;top:0">
+<path id="dn" d="M ${W * .62} ${-50} C ${W * .78} ${H * .35}, ${W * .55} ${H * .55}, ${W * .72} ${H * .78} S ${W * 1.02} ${H * 1.05}, ${W * 1.05} ${H * 1.1}" fill="none" stroke="${C.navy}" stroke-width="5"/>
+<path id="dg" d="M ${W * .66} ${-50} C ${W * .82} ${H * .35}, ${W * .59} ${H * .55}, ${W * .76} ${H * .78} S ${W * 1.06} ${H * 1.05}, ${W * 1.09} ${H * 1.1}" fill="none" stroke="${C.leaf}" stroke-width="5"/></svg>`;
+const decoPaths = [...deco.querySelectorAll('path')];
+decoPaths.forEach(p => { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.dataset.L = L; });
+function decoLines(t) {
+  show(deco, t >= 8.5 && t < 13.5);
+  decoPaths.forEach((p, i) => {
+    const L = +p.dataset.L;
+    p.style.strokeDashoffset = L * (1 - oCub(P(t, 8.55 + i * .08, 9.4 + i * .08)));
+  });
+  deco.style.opacity = .55;
+  deco.style.transform = V ? `translateX(${-W * .45}px)` : (t >= 11 ? 'scaleX(-1)' : '');
+}
+const barEls = [C.leaf, C.navy].map(c => { const b = el('div', 'bar', bars); b.style.background = c; return b; });
+const BW = W * 1.3 + H * .45;
+barEls.forEach(b => { b.style.width = BW + 'px'; });
+function barsAt(t) {
+  let any = false;
+  [[8.5, 1], [13.5, -1]].forEach(([tc, dir]) => {
+    if (t < tc - .32 || t > tc + .32) return;
+    any = true;
+    barEls.forEach((b, i) => {
+      const lag = (1 - i) * -.06;  // green leads
+      const p = ioCub(P(t, tc - .3 - lag, tc + .3 - lag));
+      const travel = W + BW + H * .5;
+      let cx = -BW / 2 - H * .25 + p * travel;
+      if (dir < 0) cx = W - cx;
+      b.style.transform = `translateX(${cx - BW / 2}px) skewX(${-20 * dir}deg)`;
+    });
+  });
+  show(bars, any);
+}
+function irisAt(t) {
+  const p = ioCub(P(t, 16.1, 16.5));
+  show(iris, p > 0 && t < 16.55);
+  iris.style.clipPath = `circle(${p * Math.hypot(W, H) * .55}px at 50% ${V ? 50 : 55}%)`;
+}
+function flashAt(t) {
+  const o = Math.max(1 - P(t, 3.0, 3.2), 0) * (t >= 3.0 ? 1 : 0) + (t >= 2 && t < 2.08 ? .5 * (1 - P(t, 2, 2.08)) : 0);
+  flash.style.opacity = o; show(flash, o > .01);
+}
+
+// ---------- cursor ----------
+// keyframes [t, x, y]; downs: [t0, t1] intervals the button is pressed
+const tp = n => phonePt(...TAP[n]);
+const CK = [], DOWN = [], RIP = [];
+function kf(t, xy) { CK.push([t, xy[0], xy[1]]); }
+// F1 taps
+kf(5.95, V ? [W + 60, H * .62] : [W + 60, H * .95]);
+kf(6.42, tp('Pedidos')); kf(6.55, tp('Pedidos'));
+kf(6.92, tp('Faturas')); kf(7.05, tp('Faturas'));
+kf(7.42, tp('NFe')); kf(7.6, tp('NFe'));
+kf(8.3, V ? [W * .8, H * .9] : [W * .78, H * 1.05]);
+['Pedidos', 'Faturas', 'NFe'].forEach(n => { DOWN.push([f1T[n], f1T[n] + .1]); RIP.push([f1T[n], ...tp(n), C.app]); });
+// F2 selection + drag-scroll
+kf(8.6, V ? [W * .2, H + 80] : [W * .55, H + 80]);
+kf(9.2, f2Pt(116, 808, 0)); kf(9.25, f2Pt(116, 808, 0));
+kf(9.7, f2Pt(968, 808, 0)); kf(9.85, f2Pt(968, 808, 0));
+const dragA = f2Pt(620, 1180, 0);
+kf(9.98, dragA); DOWN.push([9.25, 9.75], [10.0, 10.42]);
+// during drag the cursor follows the page (handled in cursorAt)
+kf(10.42, [dragA[0], dragA[1] - 380 * LF2.k]); kf(10.8, [dragA[0] - 40, dragA[1] - 400 * LF2.k]);
+// F3 selection
+kf(11.15, V ? [W + 60, H * .5] : [W * .5, H + 80]);
+kf(11.45, f3Pt(QL.x0, QL.y0 + 38)); kf(11.5, f3Pt(QL.x0, QL.y0 + 38));
+kf(12.05, f3Pt(QL.x0 + QL.w, QL.y0 + 38)); kf(12.2, f3Pt(QL.x0 + QL.w + 30, QL.y0 + 70));
+kf(13.0, V ? [W * .85, H * .55] : [W * .45, H * .92]);
+DOWN.push([11.5, 12.1]);
+// NUMBER selection
+kf(13.5, V ? [W + 60, H * .7] : [W * .8, H + 80]);
+kf(13.7, numPt(229, 252)); kf(13.75, numPt(229, 252));
+kf(14.1, numPt(603, 252)); kf(14.3, numPt(640, 300)); kf(14.7, V ? [W + 80, H * .8] : [W + 80, H * .9]);
+DOWN.push([13.75, 14.15]);
+// SIGNATURE click on the domain
+kf(18.0, V ? [W + 60, H * .9] : [W + 60, H * .95]);
+kf(18.45, [LS.x + 140, LS.y + LS.dy + 10]); kf(18.62, [LS.x + 140, LS.y + LS.dy + 10]);
+kf(19.4, [LS.x + 260, LS.y + LS.dy + 150]);
+DOWN.push([18.5, 18.6]); RIP.push([18.5, LS.x + 140, LS.y + LS.dy + 10, C.leaf]);
+RIP.push([9.25, ...f2Pt(116, 808, 0), '#3390ff'], [11.5, ...f3Pt(QL.x0, QL.y0 + 38), '#3390ff'], [13.75, ...numPt(229, 252), '#3390ff']);
+const CURSOR_ON = [[5.95, 8.45], [8.6, 10.9], [11.15, 13.45], [13.5, 14.7], [18.0, 20]];
+function cursorAt(t) {
+  if (!CURSOR_ON.some(([a, b]) => t >= a && t <= b)) return null;
+  let x = CK[0][1], y = CK[0][2];
+  for (let i = 0; i < CK.length - 1; i++) {
+    const [ta, xa, ya] = CK[i], [tb, xb, yb] = CK[i + 1];
+    if (t >= ta && t <= tb) { const p = ioCub(P(t, ta, tb)); x = lerp(xa, xb, p); y = lerp(ya, yb, p); break; }
+    if (t > tb) { x = xb; y = yb; }
+  }
+  if (t >= 9.98 && t <= 10.42) { y = dragA[1] - f2scroll(t) * LF2.k; }
+  if (t > 10.42 && t < 10.8) { const y0 = dragA[1] - f2scroll(10.42) * LF2.k; y = lerp(y0, dragA[1] - 400 * LF2.k, ioCub(P(t, 10.42, 10.8))); }
+  const down = DOWN.some(([a, b]) => t >= a && t <= b);
+  return {x, y, down};
+}
+const ripEls = RIP.map(([ti, x, y, c]) => { const r = el('div', 'abs ripple', fx); r.style.borderColor = c; return r; });
+
+// ---------- camera shake ----------
+const SHAKE = [[0, 7], [.5, 7], [1, 9], [1.5, 9], [2, 22], [3.0, 10], [6.5, 4], [7, 4], [7.5, 5], [15.0, 18], [17.0, 5]];
+function shake(t) {
+  let x = 0, y = 0;
+  SHAKE.forEach(([ti, a]) => { if (t >= ti && t < ti + .4) { const d = Math.exp(-(t - ti) * 14) * a; x += Math.sin((t - ti) * 95) * d; y += Math.cos((t - ti) * 71) * d; } });
+  return [x, y];
+}
+
+// ---------- seek ----------
+window.seek = function (t) {
+  const b = bgAt(t); if (b !== lastBg) { bg.style.background = b; lastBg = b; }
+  hook(t); prod(t); f1(t); f2(t); f3(t); num(t); sig(t);
+  decoLines(t); barsAt(t); irisAt(t); flashAt(t);
+  const [sx, sy] = shake(t); cam.style.transform = `translate(${sx}px,${sy}px)`;
+  const c = cursorAt(t);
+  if (c) { cursor.style.display = ''; cursor.style.transform = `translate(${c.x - 4}px,${c.y - 4}px) scale(${c.down ? .82 : 1})`; }
+  else cursor.style.display = 'none';
+  RIP.forEach(([ti, x, y], i) => {
+    const p = P(t, ti, ti + .5);
+    set(ripEls[i], {x, y, s: lerp(.15, 1.5, oExpo(p)), o: t >= ti && p < 1 ? 1 - p : 0});
+  });
+};
+
+// events consumed by the soundtrack generator (single source of truth)
+window.EVENTS = {
+  clicks: [6.5, 7.0, 7.5, 9.25, 9.75, 10.0, 10.42, 11.5, 12.1, 13.75, 14.15, 18.5],
+  whoosh: [[2.62, 3.0, 'zoom'], [3.38, 3.55, 's'], [3.62, 3.8, 's'], [3.88, 4.08, 's'], [5.45, 5.95, 'm'], [8.2, 8.62, 'L'],
+           [10.0, 10.7, 'scroll'], [10.8, 11.15, 'L'], [12.1, 12.5, 's'], [13.2, 13.62, 'L'], [16.05, 16.5, 'L']],
+  impacts: [[0, .7], [.5, .7], [1, .8], [1.5, .8], [2, 1.0], [3.0, 1.0], [15.0, 1.0], [16.5, .9]],
+  pops: [4.5, 11.22, 16.52, 16.57, 16.62, 16.67, 16.72, 16.77, 16.82, 16.87, 16.95],
+  ticks: Array.from({length: 15}, (_, i) => 17.5 + i * (0.7 / 15)),
+  count: [14.3, 15.0]
+};
+window.READY = (async () => {
+  await Promise.all([400, 500, 600, 700, 800, 900].map(w => document.fonts.load(`${w} 100px Poppins`, 'AÃÉÊ+60')));
+  await document.fonts.ready;
+  const extra = ['logo-lettering.png', 'logo-folha.png', 'barter.png'].map(f => { const i = new Image(); i.src = R + f; return i; });
+  await Promise.all([...document.images, ...extra].map(i => i.decode().catch(() => {})));
+  await new Promise(r => setTimeout(r, 50));
+  seek(0); return true;
+})();
+</script>
+</body>
+</html>
