@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Araguaia Motion 25s</title>
+<style>
+@font-face{font-family:Poppins;font-weight:400;src:url(../assets/fontes/poppins-latin-400-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:500;src:url(../assets/fontes/poppins-latin-500-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:600;src:url(../assets/fontes/poppins-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:700;src:url(../assets/fontes/poppins-latin-700-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:800;src:url(../assets/fontes/poppins-latin-800-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:900;src:url(../assets/fontes/poppins-latin-900-normal.woff2) format('woff2')}
+html,body{margin:0;padding:0;background:#000;overflow:hidden}
+#stage{position:relative;overflow:hidden;font-family:Poppins,sans-serif;-webkit-font-smoothing:antialiased}
+.abs{position:absolute;left:0;top:0;transform-origin:50% 50%}
+.layer{position:absolute;left:0;top:0;width:100%;height:100%}
+.t{white-space:nowrap;line-height:1}
+.line{position:absolute;left:0;width:100%;display:flex;justify-content:center;gap:.22em;line-height:1;white-space:nowrap}
+.line span{display:inline-block;transform-origin:50% 60%}
+.ripple{width:140px;height:140px;border-radius:50%;border:7px solid #64B240;box-sizing:border-box}
+.bar{position:absolute;top:-10%;height:120%}
+.cardui{filter:drop-shadow(0 22px 30px rgba(20,34,60,.22)) drop-shadow(0 3px 6px rgba(20,34,60,.12))}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+// =====================================================================
+// Araguaia · 25 s · 120 BPM — linha do tempo determinística (seek(t))
+// 0–3 gancho · 3–6 app se monta · 6–9 app em uso · 9–12 assistência
+// 12–15 portfólio · 15–18 barter · 18–21,5 +60 lojas · 21,5–25 assinatura
+// =====================================================================
+const DUR = 25;
+const Q = new URLSearchParams(location.search);
+const W = +Q.get('w') || 1920, H = +Q.get('h') || 1080, V = H > W;
+const R = '../assets/recortes/';
+const C = {navy:'#1E3D6C', deep:'#061331', red:'#CF312E', leaf:'#60BC4D', app:'#64B240', gray:'#F0F0F0', site:'#203783'};
+const stage = document.getElementById('stage');
+stage.style.width = W + 'px'; stage.style.height = H + 'px';
+
+// ---------- easing ----------
+const cl = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const P = (t, a, b) => cl((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const oExpo = p => p >= 1 ? 1 : 1 - Math.pow(2, -10 * p);
+const iExpo = p => p <= 0 ? 0 : Math.pow(2, 10 * (p - 1));
+const oCub = p => 1 - Math.pow(1 - p, 3);
+const ioCub = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const oBack = (p, s = 1.70158) => { const c = s + 1; return 1 + c * Math.pow(p - 1, 3) + s * Math.pow(p - 1, 2); };
+
+// ---------- dom helpers ----------
+function el(tag, cls, parent, html) {
+  const e = document.createElement(tag); if (cls) e.className = cls;
+  if (html != null) e.innerHTML = html; (parent || stage).appendChild(e); return e;
+}
+function ow(e) { const d = e.style.display; e.style.display = ''; const w = e.offsetWidth; e.style.display = d; return w; }
+function layer(parent) { return el('div', 'layer', parent); }
+function show(e, v) { e.style.display = v ? '' : 'none'; }
+function set(e, o) {
+  if (o.o === 0) { e.style.display = 'none'; return; }
+  e.style.display = '';
+  const s = o.s ?? 1;
+  const p3 = (o.rx || o.ry) ? `perspective(1800px) rotateX(${o.rx || 0}deg) rotateY(${o.ry || 0}deg) ` : '';
+  e.style.transform = `translate(${o.x ?? 0}px,${o.y ?? 0}px) translate(-50%,-50%) ${p3}rotate(${o.r ?? 0}deg) scale(${s * (o.sx ?? 1)},${s * (o.sy ?? 1)})`;
+  e.style.opacity = o.o ?? 1;
+  if (!e.dataset.keepFilter) e.style.filter = o.b > .3 ? `blur(${o.b}px)` : '';
+}
+function img(src, parent, cls) { const e = el('img', 'abs ' + (cls || ''), parent); e.src = R + src; return e; }
+function text(str, size, weight, color, parent, extra = '') {
+  const d = el('div', 'abs t', parent, str);
+  d.style.cssText += `font-size:${size}px;font-weight:${weight};color:${color};${extra}`;
+  return d;
+}
+function slam(t, ti, d = .28, from = 2.1) {
+  const p = P(t, ti, ti + d), e = oExpo(p);
+  return {s: lerp(from, 1, e), o: t < ti ? 0 : P(t, ti, ti + .04), b: (1 - e) * 16};
+}
+function photo(src, parent, extra = '') {
+  const d = el('div', 'abs', parent); d.style.overflow = 'hidden'; d.style.transformOrigin = '0 0';
+  const i = el('img', null, d); i.src = R + src;
+  i.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;transform-origin:50% 45%;' + extra;
+  return d;
+}
+function rect(e, x, y, w, h) { Object.assign(e.style, {width: w + 'px', height: h + 'px', transform: `translate(${x}px,${y}px)`}); }
+function whip(t, tin, tout) {
+  const a = (1 - oExpo(P(t, tin, tin + .38))) * W * .9;
+  const b = -iExpo(P(t, tout, tout + .26)) * W * 1.3;
+  return {dx: a + b, blur: (1 - oExpo(P(t, tin, tin + .38))) * 28 + iExpo(P(t, tout, tout + .26)) * 36};
+}
+const poly = pts => `polygon(${pts.map(([x, y]) => `${x}px ${y}px`).join(',')})`;
+
+// ---------- global layers ----------
+const bg = el('div', 'layer', stage);
+const cam = el('div', 'layer', stage);
+const S = {};
+['hook', 'app', 'f2', 'port', 'barter', 'num', 'sig'].forEach(k => S[k] = layer(cam));
+const fx = layer(cam);
+const cursor = el('div', 'abs', cam,
+  '<svg width="52" height="72" viewBox="0 0 20 28"><path d="M1.5 1.5 L1.5 22.5 L6.7 17.6 L10.2 26 L13.8 24.4 L10.4 16.3 L17.4 16.3 Z" fill="#fff" stroke="#10151c" stroke-width="1.5" stroke-linejoin="round"/></svg>');
+cursor.style.filter = 'drop-shadow(0 6px 10px rgba(0,0,0,.35))'; cursor.style.transformOrigin = '0 0'; cursor.style.zIndex = 50;
+const bars = layer(stage), flash = el('div', 'layer', stage), iris = el('div', 'layer', stage);
+flash.style.background = '#fff'; iris.style.background = '#fff';
+
+// =====================================================================
+// 1 · GANCHO (0–3 s) — palavras na batida sobre flashes de fotos reais em duotone
+// =====================================================================
+const hk = {size: V ? 205 : 250};
+const hookBgs = [['foto-fabrica.png', '50% 50%'], ['foto-agricultura.png', '40% 60%'], ['foto-pecuaria.png', '55% 40%'], ['app/card-banner.png', '50% 50%']]
+  .map(([f, pos]) => {
+    const d = photo(f, S.hook, `object-position:${pos};filter:grayscale(1) contrast(1.25) brightness(.95)`);
+    const tint = el('div', null, d);
+    tint.style.cssText = `position:absolute;inset:0;background:linear-gradient(160deg,#0b2a6b,${C.deep});mix-blend-mode:multiply;opacity:.9`;
+    rect(d, 0, 0, W, H); return d;
+  });
+const hookLines = V ? [['O', 'CAMPO'], ['NÃO'], ['PODE']] : [['O', 'CAMPO'], ['NÃO', 'PODE']];
+const hookTimes = {O: 0, CAMPO: .5, 'NÃO': 1, PODE: 1.5};
+const hookWords = [];
+hookLines.forEach((ln, i) => {
+  const d = el('div', 'line', S.hook);
+  d.style.cssText += `font-size:${hk.size}px;font-weight:900;color:#fff;letter-spacing:-.02em;text-shadow:0 10px 40px rgba(0,0,0,.35)`;
+  const gapY = V ? 250 : 290;
+  d.style.top = (H / 2 + (i - (hookLines.length - 1) / 2) * gapY - hk.size * .55) + 'px';
+  ln.forEach(w => {
+    const s = el('span', null, d, w);
+    if (w === 'NÃO') s.style.cssText = `background:${C.red};padding:0 .14em;border-radius:.06em`;
+    if (d.children.length > 1) s.style.transformOrigin = '0% 60%';
+    hookWords.push({e: s, t: hookTimes[w], w, line: i, grow: d.children.length > 1});
+  });
+});
+const esperar = text('ESPERAR.', 300, 900, '#fff', S.hook, 'letter-spacing:-.03em');
+function hook(t) {
+  show(S.hook, t < 3.05);
+  hookBgs.forEach((d, i) => {
+    const on = t >= i * .5 && t < (i + 1) * .5;
+    show(d, on);
+    if (on) d.firstChild.style.transform = `scale(${1.18 - .1 * P(t, i * .5, i * .5 + .5)}) translateX(${(i % 2 ? -1 : 1) * 20 * P(t, i * .5, i * .5 + .5)}px)`;
+  });
+  const shift = {};
+  hookWords.forEach(w => { if (w.grow) { w.nat = w.nat || ow(w.e) + hk.size * .22; shift[w.line] = w.nat / 2 * (1 - ioCub(P(t, w.t, w.t + .2))); } });
+  hookWords.forEach(w => {
+    const k = slam(t, w.t, .3, 2.4);
+    w.e.style.opacity = t < 2 ? k.o : 0;
+    w.e.style.transform = `translateX(${shift[w.line] || 0}px) scale(${k.s}) translateY(${(1 - oExpo(P(t, w.t, w.t + .3))) * 40}px)`;
+    w.e.style.filter = k.b > .3 ? `blur(${k.b}px)` : '';
+    if (w.w === 'NÃO') w.e.style.clipPath = `inset(0 ${(1 - oExpo(P(t, 1, 1.14))) * 100}% 0 0)`;
+  });
+  if (t >= 2) {
+    const fit = (V ? .9 : .88) * W / ow(esperar);
+    const k = slam(t, 2, .32, 1.5), zp = iExpo(P(t, 2.6, 3.0));
+    set(esperar, {x: W / 2, y: H / 2 + (V ? 0 : 10), s: fit * k.s * Math.exp(zp * Math.log(22)),
+      sx: 1 + .05 * oCub(P(t, 2.5, 2.62)), o: k.o * (1 - P(t, 2.9, 3.0)), b: k.b + zp * 24});
+  } else set(esperar, {o: 0});
+}
+
+// =====================================================================
+// 2–3 · APP (3–9 s) — um único celular 3D com as telas reais; os cards da Home
+// saltam da tela e flutuam; depois o cursor navega Pedidos → Faturas → NFe
+// =====================================================================
+const appBg = el('div', 'layer', S.app);
+appBg.style.background = 'radial-gradient(120% 100% at 62% 40%, #ffffff 0%, #eef1f5 48%, #d9dfe7 100%)';
+const streaks = el('div', 'abs', S.app);
+streaks.style.cssText += `width:${W * 1.6}px;height:${H}px;opacity:.75;background:repeating-linear-gradient(118deg,transparent 0 170px,rgba(255,255,255,.95) 170px 173px,transparent 173px 260px)`;
+const PH = {w: 623, h: 1377, sx: 14, sy: 26, sw: 594, sh: 1316};
+const phone = el('div', 'abs', S.app);
+phone.style.cssText += `width:${PH.w}px;height:${PH.h}px;z-index:5`;
+phone.dataset.keepFilter = 1;
+const phShadow = el('div', 'abs', S.app);
+phShadow.style.cssText += 'width:520px;height:90px;border-radius:50%;background:radial-gradient(closest-side,rgba(20,34,60,.35),transparent);z-index:4';
+const scr = el('div', null, phone);
+scr.style.cssText = `position:absolute;left:${PH.sx}px;top:${PH.sy}px;width:${PH.sw}px;height:${PH.sh}px;overflow:hidden;border-radius:54px;background:#0a0f18`;
+const SCREENS = ['home', 'pedidos', 'faturas', 'notas'].map(n => { const i = el('img', null, scr); i.src = R + `app/tela-${n}.png`; i.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%'; return i; });
+const glare = el('div', null, scr); glare.style.cssText = 'position:absolute;left:-30%;top:-10%;width:160%;height:120%;background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.5) 50%,transparent 58%)';
+const frame = el('img', null, phone); frame.src = R + 'app/celular-moldura.png'; frame.style.cssText = 'position:absolute;left:0;top:0';
+const LA = V ? {ph: {x: 540, y: 1080, k: .68}, title: [[540, 175], [540, 300]], ts: 120, ph2: {x: 540, y: 800, k: .76}, word: {x: 540, y: 1590}}
+             : {ph: {x: 1310, y: 560, k: .64}, title: [[400, 470], [400, 600]], ts: 118, ph2: {x: 640, y: 545, k: .72}, word: {x: 1390, y: 200}};
+const appTitle = [['NOVO APP', C.navy], ['ARAGUAIA', C.app]].map(([s, c]) => text(s, LA.ts, 900, c, S.app, 'letter-spacing:-.02em'));
+const HOMECARDS = [
+  ['clima', [-360, -260], [-300, -490], 3.5], ['temp-max', [400, -350], [320, -580], 3.56], ['temp-min', [470, -215], [350, -440], 3.62],
+  ['umidade', [-355, 20], [-330, -310], 3.68], ['vento', [450, -75], [340, -300], 3.74], ['banner', [-360, 300], [-190, 440], 3.8],
+  ['noticia-1', [430, 230], [220, 330], 3.86], ['noticia-2', [370, 380], [200, 490], 3.92]];
+const homeCards = HOMECARDS.map(([n, l, v, t0], i) => ({e: img(`app/card-${n}.png`, S.app, 'cardui'), off: V ? v : l, t0, z: (i * 3) % 5}));
+homeCards.forEach(c => { c.e.style.zIndex = c.z > 2 ? 7 : 3; c.e.dataset.keepFilter = 1; });
+const POP = {pedidos: ['pedido-1', 'pedido-2', 'pedido-3'], faturas: ['fatura-1', 'fatura-2'], notas: ['nota']};
+const popEls = {};
+Object.entries(POP).forEach(([k, arr]) => popEls[k] = arr.map(n => { const e = img(`app/card-${n}.png`, S.app, 'cardui'); e.style.zIndex = 8; e.dataset.keepFilter = 1; return e; }));
+const TAPS = [['pedidos', 6.5, [226, 1196]], ['faturas', 7.0, [371, 1196]], ['notas', 7.5, [518, 1196]]];
+const WORDS = {pedidos: 'PEDIDOS', faturas: 'FATURAS', notas: 'NOTAS FISCAIS'};
+const appWords = Object.fromEntries(Object.entries(WORDS).map(([k, s]) => [k, text(s, V ? 104 : 92, 900, C.navy, S.app, 'letter-spacing:-.02em')]));
+const appWordLine = el('div', 'abs', S.app); appWordLine.style.cssText += `height:12px;background:${C.app};border-radius:6px;transform-origin:0 50%`;
+function phoneState(t) {
+  const A = LA.ph, B = LA.ph2;
+  const pin = P(t, 3.0, 3.55), e = oBack(pin, 1.25);
+  let st = {x: A.x, y: lerp(A.y + H, A.y, e), k: A.k * lerp(.7, 1, e), rx: lerp(40, 8, oExpo(pin)), ry: lerp(-55, -20, oExpo(pin)), rz: lerp(18, 0, e)};
+  const sway = P(t, 3.55, 5.6);
+  st.ry += Math.sin(sway * Math.PI) * 8; st.rx -= sway * 3; st.y -= sway * 10;
+  const m = ioCub(P(t, 5.55, 6.15));
+  st = {x: lerp(st.x, B.x, m), y: lerp(st.y, B.y, m), k: lerp(st.k, B.k, m), rx: lerp(st.rx, 0, m), ry: lerp(st.ry, 0, m), rz: st.rz * (1 - m)};
+  const oe = iExpo(P(t, 8.25, 8.95));
+  st.ry += oe * 300; st.x += V ? 0 : -oe * W * .2; st.y += V ? -oe * H * .2 : 0; st.k *= 1 - oe * .35;
+  st.b = oe * 18;
+  return st;
+}
+function screenPt(st, px, py) { return [st.x + (PH.sx + px - PH.w / 2) * st.k, st.y + (PH.sy + py - PH.h / 2) * st.k]; }
+function app(t) {
+  show(S.app, t >= 2.95 && t < 9.05);
+  streaks.style.transform = `translateX(${-W * .3 + (t - 3) * -60}px)`;
+  const st = phoneState(t);
+  set(phone, {x: st.x, y: st.y, s: st.k, rx: st.rx || .001, ry: st.ry, r: st.rz, o: t >= 3 ? 1 : 0});
+  phone.style.filter = `drop-shadow(0 40px 50px rgba(20,34,60,.3)) drop-shadow(0 8px 14px rgba(20,34,60,.16))${st.b > .3 ? ` blur(${st.b}px)` : ''}`;
+  set(phShadow, {x: st.x, y: st.y + PH.h / 2 * st.k + 30, s: st.k * 1.6, o: t >= 3.2 && t < 8.6 ? .9 : 0});
+  const on = P(t, 3.3, 3.55);
+  SCREENS[0].style.opacity = on; SCREENS[0].style.filter = `brightness(${1 + (1 - on) * 1.5})`;
+  glare.style.transform = `translateX(${lerp(-60, 60, P(t, 3.35, 4.2))}%)`;
+  let cur = 0;
+  TAPS.forEach(([n, tt], i) => {
+    const s = SCREENS[i + 1], p = ioCub(P(t, tt + .03, tt + .33));
+    s.style.display = t >= tt ? '' : 'none'; s.style.transform = `translateX(${(1 - p) * 100}%)`;
+    if (t >= tt) cur = i + 1;
+  });
+  SCREENS.forEach((s, i) => {
+    if (i < cur) { const tt = TAPS[cur - 1][1], p = ioCub(P(t, tt + .03, tt + .33)); s.style.transform = `translateX(${-p * 30}%)`; s.style.filter = `brightness(${1 - p * .3})`; s.style.display = p >= 1 && i < cur - 1 ? 'none' : ''; }
+  });
+  appTitle.forEach((e, i) => {
+    const k = slam(t, 3.55 + i * .15, .3, 1.9), out = iExpo(P(t, 5.45, 5.75));
+    set(e, {x: LA.title[i][0] - (V ? 0 : out * W * .6), y: LA.title[i][1] - (V ? out * 400 : 0), s: k.s, o: k.o, b: k.b + out * 20});
+  });
+  homeCards.forEach(c => {
+    const p = oBack(P(t, c.t0, c.t0 + .42), 1.5), back = ioCub(P(t, 5.3 + c.z * .03, 5.65 + c.z * .03));
+    const depth = 1 + (c.z - 2) * .07;
+    const fl = Math.sin((t - c.t0) * 2.2 + c.z) * 10 * P(t, c.t0 + .4, c.t0 + .9);
+    const px = st.x + c.off[0] * p * depth, py = st.y + c.off[1] * p * depth + fl;
+    set(c.e, {x: lerp(px, st.x, back), y: lerp(py, st.y, back), s: lerp(.35, (V ? 1.0 : 1.12) * depth, cl(p, 0, 1.2)) * (1 - back * .7),
+      ry: -st.ry * .4 + (c.off[0] > 0 ? -10 : 10), rx: 4, o: t >= c.t0 && back < 1 ? 1 : 0});
+  });
+  TAPS.forEach(([n, tt], i) => {
+    const next = TAPS[i + 1] ? TAPS[i + 1][1] : 8.2;
+    const k = slam(t, tt + .05, .28, 1.8), out = iExpo(P(t, next - .02, next + .12));
+    set(appWords[n], {x: LA.word.x, y: LA.word.y, s: k.s * (n === 'notas' && !V ? .9 : 1), o: t >= tt + .05 && out < 1 ? k.o * (1 - out) : 0, b: k.b + out * 12});
+    popEls[n].forEach((e, j) => {
+      const srcY = n === 'notas' ? 410 : (n === 'faturas' ? 428 + j * 110 : 496 + j * 250);
+      const [sx0, sy0] = screenPt(st, 297, srcY);
+      const ti = tt + .06 + j * .05, p = oBack(P(t, ti, ti + .3), 1.4), o2 = iExpo(P(t, next + .02, next + .18));
+      const tx = V ? W / 2 + 70 + j * 18 : 1390 + j * 26;
+      const ty = V ? (n === 'notas' ? 700 : 520 + j * (n === 'faturas' ? 130 : 230))
+                   : (n === 'notas' ? 600 : 430 + j * (n === 'faturas' ? 140 : 205));
+      set(e, {x: lerp(sx0, tx, p) + o2 * (V ? 0 : W * .4), y: lerp(sy0, ty, p) + o2 * (V ? -H * .3 : 0),
+        s: lerp(st.k, V ? .98 : (n === 'notas' ? 1.05 : .92), p), ry: lerp(0, -14, p), rx: 3, o: t >= ti && o2 < 1 ? 1 : 0});
+    });
+  });
+  appWordLine.style.width = (V ? 380 : 360) + 'px';
+  set(appWordLine, {x: LA.word.x, y: LA.word.y + (V ? 82 : 74), sx: oExpo(P(t, 6.6, 6.9)), o: t >= 6.6 && t < 8.3 ? 1 : 0});
+}
+
+// =====================================================================
+// 4 · ASSISTÊNCIA TÉCNICA (9–12 s) — fotos reais em tela cheia, divisão diagonal
+// =====================================================================
+const fAg = photo('foto-agricultura.png', S.f2);
+const seam = el('div', 'abs', S.f2); seam.style.cssText += `width:${W}px;height:${H}px;background:${C.leaf};transform-origin:0 0`;
+const fPe = photo('foto-pecuaria.png', S.f2);
+const shade = el('div', 'abs', S.f2);
+shade.style.cssText += `width:${W}px;height:${H}px;transform-origin:0 0;background:linear-gradient(180deg,rgba(6,19,49,0) 40%,rgba(6,19,49,.78) 100%)`;
+const tA = text('ASSISTÊNCIA', V ? 120 : 140, 900, '#fff', S.f2, 'letter-spacing:-.02em');
+const tB = text('TÉCNICA', V ? 120 : 140, 900, C.leaf, S.f2, 'letter-spacing:-.02em');
+const lAg = text('AGRICULTURA', V ? 86 : 78, 800, '#fff', S.f2, 'letter-spacing:.02em;text-shadow:0 6px 30px rgba(0,0,0,.55)');
+const lPe = text('PECUÁRIA', V ? 86 : 78, 800, '#fff', S.f2, 'letter-spacing:.02em;text-shadow:0 6px 30px rgba(0,0,0,.55)');
+function splitPoly(p, gap) {
+  if (!V) { const a = lerp(W * 1.15, W * .6, p) + gap, b = lerp(W * 1.0, W * .46, p) + gap; return [[a, 0], [W, 0], [W, H], [b, H]]; }
+  const a = lerp(H * 1.1, H * .58, p) + gap, b = lerp(H * 1.0, H * .44, p) + gap; return [[0, b], [W, a], [W, H], [0, H]];
+}
+function f2(t) {
+  show(S.f2, t >= 8.95 && t < 12.1);
+  const w = whip(t, -99, 11.8);
+  const zin = oExpo(P(t, 8.95, 9.5));
+  rect(fAg, w.dx, 0, W, H);
+  fAg.style.filter = w.blur > .3 ? `blur(${w.blur}px)` : '';
+  fAg.firstChild.style.transform = `translateY(${V ? -oExpo(P(t, 10.0, 10.4)) * H * .3 : 0}px) scale(${lerp(1.35, 1.05, zin) + .08 * P(t, 9.5, 12)})`;
+  const sp = oExpo(P(t, 10.0, 10.4));
+  const py0 = V ? H * .4 : 0, shiftPts = pts => pts.map(([x, y]) => [x, y - py0]);
+  show(fPe, t >= 10.0); show(seam, t >= 10.0);
+  [fPe, seam].forEach(e => { rect(e, w.dx, py0, W, H - py0); e.style.filter = w.blur > .3 ? `blur(${w.blur}px)` : ''; });
+  fPe.style.clipPath = poly(shiftPts(splitPoly(sp, 16)));
+  seam.style.clipPath = poly(shiftPts(splitPoly(sp, 0)));
+  fPe.firstChild.style.objectPosition = V ? '55% 35%' : '62% 40%';
+  fPe.firstChild.style.transform = `scale(${1.08 - .08 * P(t, 10, 12)}) translateX(${(1 - sp) * (V ? 0 : 120)}px)`;
+  shade.style.transform = `translateX(${w.dx}px)`;
+  const out = iExpo(P(t, 9.85, 10.05));
+  [[tA, 9.15, V ? H * .72 : H * .66], [tB, 9.3, V ? H * .79 : H * .8]].forEach(([e, ti, y]) => {
+    const k = slam(t, ti, .3, 1.8);
+    set(e, {x: W / 2 - out * W, y, s: k.s, o: k.o, b: k.b + out * 30});
+  });
+  const k1 = slam(t, 10.15, .3, 1.8), k2 = slam(t, 10.35, .3, 1.8);
+  set(lAg, {x: (V ? W / 2 : W * .25) + w.dx, y: V ? H * .1 : H * .86, s: k1.s, o: k1.o, b: k1.b + w.blur});
+  set(lPe, {x: (V ? W / 2 : W * .76) + w.dx, y: V ? H * .9 : H * .86, s: k2.s, o: k2.o, b: k2.b + w.blur});
+}
+
+// =====================================================================
+// 5 · PORTFÓLIO (12–15 s) — produtos reais sem fundo num carrossel 3D guiado pelo cursor
+// =====================================================================
+const pBg = photo('foto-fabrica.png', S.port);
+const pTint = el('div', 'abs', S.port);
+pTint.style.cssText += `width:${W}px;height:${H}px;transform-origin:0 0;background:radial-gradient(70% 60% at 50% 58%, rgba(30,61,108,.55) 0%, rgba(4,14,38,.94) 100%)`;
+const spot = el('div', 'abs', S.port); spot.style.cssText += 'width:1200px;height:220px;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.55),transparent)';
+const pT = [['PORTFÓLIO', '#fff'], ['COMPLETO', C.leaf]].map(([s, c]) => text(s, V ? 124 : 112, 900, c, S.port, 'letter-spacing:-.02em'));
+const PRODS = [['fertilizantes', 'Fertilizantes'], ['vig', 'Vig Sementes'], ['baia', 'Nutrição Animal'], ['foliar', 'Nutrição Foliar']];
+const prods = PRODS.map(([f]) => { const e = img(`produtos/${f}.png`, S.port); e.style.filter = 'drop-shadow(0 30px 30px rgba(0,0,0,.45))'; e.dataset.keepFilter = 1; return e; });
+const pLabels = PRODS.map(([, s]) => text(s.toUpperCase(), V ? 64 : 58, 800, '#fff', S.port, 'letter-spacing:.04em'));
+const pLine = el('div', 'abs', S.port); pLine.style.cssText += `height:10px;width:200px;background:${C.leaf};border-radius:5px`;
+const ROT = [12.25, 12.75, 13.25, 13.75];
+const LP = V ? {cx: 540, cy: 1020, hero: 1.0, R: 520, ty: [250, 380], ly: 1500, lineup: {k: .62}}
+             : {cx: 960, cy: 580, hero: 1.0, R: 720, ty: [130, 130], ly: 935, lineup: {y: 590, k: .66, gap: 430}};
+const seal = el('div', 'abs', S.port,
+  `<svg width="250" height="250" viewBox="-125 -125 250 250"><defs><path id="ring" d="M 0 -86 A 86 86 0 1 1 -0.1 -86"/></defs>
+   <circle r="122" fill="${C.leaf}"/><circle r="110" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="2 7"/><circle r="62" fill="#fff"/>
+   <text fill="#fff" font-family="Poppins" font-weight="800" font-size="21"><textPath href="#ring" textLength="528" lengthAdjust="spacing">QUALIDADE · ARAGUAIA · QUALIDADE · ARAGUAIA ·</textPath></text>
+   <image href="${R}folha-solo.png" x="-44" y="-33" width="88" height="63"/></svg>`);
+seal.style.zIndex = 30;
+function carouselPos(t) { let idx = 0; ROT.slice(1).forEach(r => { idx += oBack(P(t, r - .12, r + .2), 1.3); }); return idx; }
+function port(t) {
+  show(S.port, t >= 11.9 && t < 15.1);
+  const w = whip(t, 11.95, 99);
+  rect(pBg, w.dx, 0, W, H); pBg.firstChild.style.transform = `scale(${lerp(1.3, 1.08, oCub(P(t, 11.95, 15)))})`;
+  pBg.style.filter = `blur(${8 + w.blur}px)`; rect(pTint, w.dx, 0, W, H);
+  pT.forEach((e, i) => {
+    const k = slam(t, 12.05 + i * .12, .3, 2);
+    const x = V ? W / 2 : (i ? W / 2 + 22 + ow(e) / 2 : W / 2 - 22 - ow(e) / 2);
+    set(e, {x: x + w.dx, y: LP.ty[i], s: k.s, o: k.o, b: k.b + w.blur});
+  });
+  const idx = carouselPos(t), line = ioCub(P(t, 14.05, 14.45));
+  set(spot, {x: LP.cx + w.dx, y: LP.cy + (V ? 300 : 250), sx: 1 + line * (V ? 0 : .4), o: P(t, 12.1, 12.4)});
+  prods.forEach((e, i) => {
+    const d = i - idx, ang = d * 72 * Math.PI / 180, cz = Math.cos(ang);
+    const pin = oBack(P(t, 12.1 + i * .06, 12.5 + i * .06), 1.4);
+    const k3 = (cz + 1.1) / 2.1;
+    const nW = e.naturalWidth || 400, nH = e.naturalHeight || 400;
+    const fitK = Math.min((V ? 620 : 600) / nW, (V ? 700 : 560) / nH);
+    const car = {x: LP.cx + Math.sin(ang) * LP.R, y: LP.cy - (1 - cz) * (V ? 70 : 90), s: LP.hero * k3, ry: -Math.sin(ang) * 40};
+    let lu;
+    if (V) lu = {x: LP.cx + ((i % 2) - .5) * 480, y: 820 + Math.floor(i / 2) * 560, s: LP.lineup.k};
+    else lu = {x: LP.cx + (i - 1.5) * LP.lineup.gap, y: LP.lineup.y, s: LP.lineup.k};
+    const x = lerp(car.x, lu.x, line), y = lerp(car.y, lu.y, line) + (1 - pin) * H * .6, s = lerp(car.s, lu.s, line) * fitK * cl(pin, 0, 1.3);
+    e.style.zIndex = Math.round(10 + cz * 5);
+    const vis = t >= 12.1 + i * .06 && (cz > 0 || line > 0);
+    set(e, {x: x + w.dx, y, s, ry: car.ry * (1 - line), o: vis ? (line > 0 ? Math.max(line, cl(cz * 3, 0, 1)) : cl(cz * 3, 0, 1)) : 0});
+    e.style.filter = `drop-shadow(0 30px 30px rgba(0,0,0,.45)) brightness(${lerp(.35 + .65 * Math.pow(cl(cz, 0, 1), 3), 1, line)})${w.blur > .3 ? ` blur(${w.blur}px)` : ''}`;
+  });
+  pLabels.forEach((e, i) => {
+    const ti = ROT[i], next = ROT[i + 1] ?? 14.05;
+    const k = slam(t, ti, .26, 1.6), out = P(t, next - .08, next + .02);
+    set(e, {x: LP.cx + w.dx, y: LP.ly, s: k.s, o: t >= ti && out < 1 ? k.o * (1 - out) : 0, b: k.b});
+  });
+  set(pLine, {x: LP.cx + w.dx, y: LP.ly + (V ? 60 : 54), sx: oExpo(P(t, 12.3, 12.6)) * (1 - P(t, 14.0, 14.1)), o: t >= 12.3 && t < 14.1 ? 1 : 0});
+  const ps = P(t, 14.45, 14.66);
+  set(seal, {x: (V ? 800 : 1640) + w.dx, y: V ? 1600 : 860, s: (V ? 1.15 : 1.0) * lerp(3.2, 1, oExpo(ps)), r: lerp(-40, -12, oExpo(ps)) + (t - 14.45) * 22,
+    o: t >= 14.45 ? P(t, 14.45, 14.5) : 0, b: (1 - oExpo(ps)) * 10});
+}
+
+// =====================================================================
+// 6 · BARTER (15–18 s) — insumo vai, grão vem; depois os 4 benefícios (ícones reais do site)
+// =====================================================================
+const LB = V ? {bw: {x: 540, y: 230}, A: {x: 540, y: 760}, B: {x: 540, y: 1430}, sw: {x: 860, y: 1100}, kb: 1.7}
+             : {bw: {x: 960, y: 175}, A: {x: 560, y: 600}, B: {x: 1360, y: 600}, sw: {x: 960, y: 600}, kb: 1.55};
+const barterWord = el('div', 'abs t', S.barter);
+barterWord.style.cssText += `font-size:${V ? 200 : 180}px;font-weight:900;color:#fff;letter-spacing:-.03em;display:flex`;
+const barterLetters = [...'BARTER'].map(ch => { const s = el('span', null, barterWord, ch); s.style.display = 'inline-block'; return s; });
+const bag = img('produtos/saco-50kg.png', S.barter); bag.style.zIndex = 5;
+const GR = [];
+(function () {
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let r = 0; r < 6; r++) for (let c = 0; c < 8 - r; c++) {
+    const e = el('div', 'abs', S.barter);
+    e.style.cssText += 'width:40px;height:33px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#fbe9b7 0,#e2bd66 45%,#b48834 100%);box-shadow:0 4px 8px rgba(0,0,0,.3)';
+    GR.push({e, dx: (c - (7 - r) / 2) * 38 + (rnd() - .5) * 10, dy: -r * 28 + (rnd() - .5) * 6, r: rnd() * 180, i: GR.length});
+  }
+})();
+const lIn = text('INSUMOS', V ? 56 : 50, 800, '#fff', S.barter, 'letter-spacing:.12em');
+const lGr = text('GRÃO', V ? 56 : 50, 800, C.leaf, S.barter, 'letter-spacing:.12em');
+const swapIcon = img('barter/icone-credito.png', S.barter);
+const SWAP = [15.85, 16.3];
+const BEN = [['credito', 'PODER DE COMPRA'], ['protecao', 'PROTEÇÃO'], ['acompanhamento', 'ACOMPANHAMENTO'], ['garantia', 'GARANTIA']];
+const benIcons = BEN.map(([f]) => img(`barter/icone-${f}.png`, S.barter));
+const benLabels = BEN.map(([, s]) => text(s, V ? 48 : 42, 800, '#fff', S.barter, 'letter-spacing:.06em'));
+const BT = [16.5, 16.75, 17.0, 17.25];
+function along(a, b, p, bow) {
+  const q = Math.sin(p * Math.PI);
+  return {x: lerp(a.x, b.x, p) + (V ? bow : 0) * q, y: lerp(a.y, b.y, p) + (V ? 0 : bow) * q};
+}
+function bagPos(t) { return along(LB.A, LB.B, ioCub(P(t, ...SWAP)), -150); }
+function barter(t) {
+  show(S.barter, t >= 14.95 && t < 18.1);
+  const out = iExpo(P(t, 16.35, 16.6));
+  set(barterWord, {x: LB.bw.x, y: LB.bw.y, o: t >= 15.0 ? 1 : 0});
+  barterLetters.forEach((s, i) => {
+    const ti = 15.02 + i * .045, k = slam(t, ti, .3, 2.6);
+    s.style.opacity = k.o; s.style.transform = `translateY(${(1 - oBack(P(t, ti, ti + .3), 2.2)) * 70}px) scale(${k.s})`;
+  });
+  const pin = P(t, 15.25, 15.6), bp = bagPos(t);
+  set(bag, {x: bp.x + (V ? 0 : -out * W * .6), y: bp.y + Math.sin(t * 3) * 6 + (V ? -out * H * .5 : 0), s: LB.kb * oBack(pin, 2.2),
+    r: (1 - oBack(pin, 2)) * -20 + Math.sin(P(t, ...SWAP) * Math.PI) * 10, o: t >= 15.25 && out < 1 ? 1 : 0, b: out * 20});
+  GR.forEach(g => {
+    const ti = 15.3 + g.i * .012, p = P(t, ti, ti + .3);
+    const sp = ioCub(P(t, SWAP[0] + .08 + g.i * .005, SWAP[1] + .1 + g.i * .005));
+    const from = {x: LB.B.x + g.dx, y: LB.B.y + 70 + g.dy}, to = {x: LB.A.x + g.dx, y: LB.A.y + 70 + g.dy};
+    const pos = along(from, to, sp, 150 + (g.i % 5) * 18);
+    const drop = (1 - oBack(p, 1.6)) * (V ? H * .45 : -(H * .55 + g.i * 6));
+    set(g.e, {x: pos.x + (V ? 0 : out * W * .6), y: pos.y + drop + (V ? out * H * .5 : 0), r: g.r + sp * 220, o: t >= ti && out < 1 ? 1 : 0});
+  });
+  const gp = along(LB.B, LB.A, ioCub(P(t, SWAP[0] + .08, SWAP[1] + .15)), 150);
+  const kI = slam(t, 15.45, .28, 1.6), kG = slam(t, 15.6, .28, 1.6);
+  const off = V ? 290 : 285;
+  set(lIn, {x: bp.x - (V ? 0 : out * W * .6), y: bp.y + off - (V ? out * H * .5 : 0), s: kI.s, o: out < 1 ? kI.o : 0, b: kI.b + out * 20});
+  set(lGr, {x: gp.x + (V ? 0 : out * W * .6), y: gp.y + off - (V ? 40 : 30) + (V ? out * H * .5 : 0), s: kG.s, o: out < 1 ? kG.o : 0, b: kG.b + out * 20});
+  const sw = oBack(P(t, 15.65, 15.85), 2);
+  set(swapIcon, {x: LB.sw.x, y: LB.sw.y, s: sw * .8 * (1 - out), r: 360 * ioCub(P(t, ...SWAP)), o: t >= 15.65 && out < 1 ? 1 : 0});
+  benIcons.forEach((e, i) => {
+    const ti = BT[i], p = P(t, ti, ti + .35);
+    const x = V ? (i % 2 ? 790 : 290) : 300 + i * 440, y = V ? 760 + Math.floor(i / 2) * 560 : 560;
+    set(e, {x, y, s: (V ? 1.2 : 1.15) * oBack(p, 2.4), r: (1 - oExpo(p)) * -25, o: t >= ti ? 1 : 0});
+    const k = slam(t, ti + .08, .26, 1.5), lw = ow(benLabels[i]), fitL = Math.min(1, (V ? 470 : 420) / lw);
+    set(benLabels[i], {x, y: y + (V ? 215 : 200), s: k.s * fitL, o: k.o, b: k.b});
+  });
+}
+
+// =====================================================================
+// 7 · NÚMERO (18–21,5 s) — 60 folhas brotam até +60 LOJAS em 8 estados
+// =====================================================================
+const NL = 60, LT0 = 18.05, LT1 = 19.5, I0 = 24;
+const NR = V ? {r0: 340, r1: 600, sx: .95, sy: 1.55, ls: .62} : {r0: 300, r1: 560, sx: 1.6, sy: .95, ls: .55};
+const NC2 = (NR.r1 * NR.r1 - NR.r0 * NR.r0) / (NL - 1);
+const leaves = Array.from({length: NL}, () => img('folha-solo.png', S.num));
+const big = text('+0', 300, 900, '#fff', S.num, 'letter-spacing:-.04em;font-variant-numeric:tabular-nums');
+const lojas = text('LOJAS', V ? 130 : 120, 800, C.leaf, S.num, 'letter-spacing:.02em');
+const estados = text('em 8 estados', V ? 64 : 58, 600, '#fff', S.num);
+const fonte = text('Fonte: araguaia.com.br · Nossa História', 26, 500, 'rgba(255,255,255,.6)', S.num, 'letter-spacing:.04em');
+function num(t) {
+  show(S.num, t >= 17.95 && t < 21.55);
+  const step = (LT1 - LT0) / NL, spin = 14 * ioCub(P(t, 19.7, 20.9));
+  leaves.forEach((e, i) => {
+    const r = Math.sqrt(NR.r0 * NR.r0 + NC2 * i), th = (I0 + i) * 137.508 + spin, a = th * Math.PI / 180;
+    const ti = LT0 + i * step, p = P(t, ti, ti + .3);
+    const wave = Math.max(0, Math.sin(Math.PI * P(t, LT1 + i * .006, LT1 + .3 + i * .006)));
+    set(e, {x: W / 2 + Math.cos(a) * r * NR.sx, y: H / 2 + Math.sin(a) * r * NR.sy, s: NR.ls * oBack(p, 2.4) * (1 + .35 * wave),
+      r: th + 90 + (1 - oExpo(p)) * -60, o: t >= ti ? 1 : 0});
+  });
+  const n = Math.min(NL, Math.max(0, Math.floor((t - LT0) / step) + 1));
+  big.textContent = '+' + n;
+  const k = slam(t, LT0, .3, 1.6), land = oBack(P(t, LT1, LT1 + .25), 3);
+  set(big, {x: W / 2, y: H / 2 - (V ? 70 : 60), s: k.s * (t > LT1 ? lerp(1.15, 1, land) : .82), o: k.o, b: k.b});
+  const k2 = slam(t, LT1, .3, 2), k3 = slam(t, LT1 + .25, .3, 1.5);
+  set(lojas, {x: W / 2, y: H / 2 + (V ? 120 : 115), s: k2.s, o: k2.o, b: k2.b});
+  set(estados, {x: W / 2, y: H / 2 + (V ? 215 : 200), s: k3.s, o: k3.o, b: k3.b});
+  set(fonte, {x: W / 2, y: V ? 1830 : 1035, o: P(t, 19.85, 20.1)});
+  const ex = iExpo(P(t, 21.1, 21.5));
+  S.num.style.transform = `scale(${1 - ex * .25})`; S.num.style.filter = ex > .02 ? `blur(${ex * 18}px)` : '';
+}
+
+// =====================================================================
+// 8 · ASSINATURA (21,5–25 s) — fundo claro, logo animado + domínio
+// =====================================================================
+const sigBg = el('div', 'abs', S.sig);
+sigBg.style.cssText += `width:${W}px;height:${H}px;transform-origin:50% 50%;background:radial-gradient(80% 70% at 50% 45%, #ffffff 0%, #f3f6f2 60%, #e3ebe2 100%)`;
+const LS = V ? {x: 540, y: 840, k: 1.62, dy: 235} : {x: 960, y: 455, k: 1.58, dy: 215};
+const logoW = 574 * LS.k, logoH = 163 * LS.k;
+const logoBox = el('div', 'abs', S.sig); logoBox.style.width = logoW + 'px'; logoBox.style.height = logoH + 'px';
+const LETTERS = [[6, 75], [81, 148], [155, 223], [229, 300], [308, 374], [380, 449], [460, 478], [486, 568]];
+const letterEls = LETTERS.map(([a, b]) => {
+  const d = el('div', null, logoBox);
+  d.style.cssText = `position:absolute;left:${(a - 3) * LS.k}px;top:0;width:${(b - a + 6) * LS.k}px;height:${logoH}px;` +
+    `background:url(${R}logo-lettering.png) no-repeat;background-size:${logoW}px ${logoH}px;background-position:-${(a - 3) * LS.k}px 0;transform-origin:50% 100%`;
+  return d;
+});
+const leaf = el('div', null, logoBox);
+leaf.style.cssText = `position:absolute;left:0;top:0;width:${logoW}px;height:${logoH}px;background:url(${R}logo-folha.png) no-repeat;background-size:100% 100%;transform-origin:${468.5 * LS.k}px ${87 * LS.k}px`;
+const burst = Array.from({length: 16}, () => img('folha-solo.png', S.sig));
+const DOMAIN = 'araguaia.com.br';
+const dom = text('', V ? 70 : 64, 700, C.navy, S.sig, 'letter-spacing:.01em');
+const domMeasure = text(DOMAIN, V ? 70 : 64, 700, C.navy, S.sig, 'letter-spacing:.01em;visibility:hidden');
+const domLine = el('div', 'abs', S.sig); domLine.style.cssText += `height:7px;background:${C.leaf};border-radius:4px;transform-origin:0 50%`;
+const caret = el('div', 'abs', S.sig); caret.style.cssText += `width:5px;height:${V ? 76 : 70}px;background:${C.leaf}`;
+const T8 = 21.5;
+function sig(t) {
+  show(S.sig, t >= 21.3);
+  set(logoBox, {x: LS.x, y: LS.y, s: 1 + .03 * ioCub(P(t, 22.3, DUR))});
+  letterEls.forEach((d, i) => {
+    const ti = T8 + .02 + i * .05, p = P(t, ti, ti + .34);
+    d.style.opacity = P(t, ti, ti + .04);
+    d.style.transform = `translateY(${(1 - oExpo(p)) * 60}px) scale(${oBack(p, 2.4)})`;
+  });
+  const lp = P(t, T8 + .45, T8 + .9);
+  leaf.style.opacity = P(t, T8 + .45, T8 + .5);
+  leaf.style.transform = `rotate(${lerp(-38, 0, oBack(lp, 2)) + Math.sin((t - T8 - .9) * 3) * 1.2 * P(t, T8 + .9, T8 + 1.5)}deg) scale(${oBack(lp, 2.6)})`;
+  const bx = LS.x - logoW / 2 + 468.5 * LS.k, by = LS.y - logoH / 2 + 60 * LS.k;
+  burst.forEach((e, i) => {
+    const a = (i / burst.length) * Math.PI * 2 + .3, p = P(t, T8 + .5, T8 + 1.4), d = oExpo(p) * (V ? 420 : 380) * (.7 + .3 * ((i * 7) % 5) / 4);
+    set(e, {x: bx + Math.cos(a) * d, y: by + Math.sin(a) * d * .8 + p * p * 120, s: .38 * (1 - p * .5), r: a * 57.3 + 90 + p * 200, o: t >= T8 + .5 && p < 1 ? 1 - p * p : 0});
+  });
+  const n = Math.floor(P(t, 22.6, 23.3) * DOMAIN.length + .001);
+  dom.textContent = DOMAIN.slice(0, n);
+  const dw = ow(domMeasure), dy = LS.y + LS.dy, cw = ow(dom);
+  set(domMeasure, {x: LS.x, y: dy});
+  set(dom, {x: LS.x - dw / 2 + cw / 2, y: dy, o: t >= 22.6 ? 1 : 0});
+  const blink = t < 23.3 || (Math.floor((t - 23.3) * 4) % 2 === 0 && t < 23.6);
+  set(caret, {x: LS.x - dw / 2 + cw + 8, y: dy, o: t >= 22.55 && blink ? 1 : 0});
+  domLine.style.width = dw + 'px';
+  set(domLine, {x: LS.x, y: dy + (V ? 58 : 52), sx: oExpo(P(t, 23.6, 23.95)), o: t >= 23.6 ? 1 : 0});
+}
+
+// =====================================================================
+// fundo, barras de transição, íris, flash
+// =====================================================================
+function bgAt(t) {
+  if (t < 2) return C.deep;
+  if (t < 3) return C.red;
+  if (t < 9) return '#e9edf2';
+  if (t < 15) return C.deep;
+  if (t < 18) return `radial-gradient(110% 90% at 50% 45%, #2a46a0 0%, ${C.site} 50%, #14245a 100%)`;
+  if (t < 21.5) return `radial-gradient(110% 100% at 50% 60%, #24497f 0%, ${C.navy} 45%, #0c1f3d 100%)`;
+  return '#fff';
+}
+let lastBg = '';
+const barEls = [C.leaf, C.navy].map(c => { const b = el('div', 'bar', bars); b.style.background = c; return b; });
+const BW = W * 1.3 + H * .45;
+barEls.forEach(b => { b.style.width = BW + 'px'; });
+const BARS = [[9.0, 1], [15.0, -1], [18.0, 1]];
+function barsAt(t) {
+  let any = false;
+  BARS.forEach(([tc, dir]) => {
+    if (t < tc - .32 || t > tc + .32) return;
+    any = true;
+    barEls.forEach((b, i) => {
+      const lag = (1 - i) * -.06, p = ioCub(P(t, tc - .3 - lag, tc + .3 - lag));
+      let cx = -BW / 2 - H * .25 + p * (W + BW + H * .5);
+      if (dir < 0) cx = W - cx;
+      b.style.transform = `translateX(${cx - BW / 2}px) skewX(${-20 * dir}deg)`;
+    });
+  });
+  show(bars, any);
+}
+function irisAt(t) {
+  const p = ioCub(P(t, 21.1, 21.5));
+  show(iris, p > 0 && t < 21.55);
+  iris.style.clipPath = `circle(${p * Math.hypot(W, H) * .55}px at 50% ${V ? 50 : 55}%)`;
+}
+function flashAt(t) {
+  const o = (t >= 3.0 ? Math.max(1 - P(t, 3.0, 3.2), 0) : 0) + (t >= 2 && t < 2.08 ? .5 * (1 - P(t, 2, 2.08)) : 0);
+  flash.style.opacity = o; show(flash, o > .01);
+}
+
+// =====================================================================
+// cursor (ações reais: tocar, arrastar o carrossel, arrastar a sacaria, clicar)
+// =====================================================================
+const CK = [], DOWN = [], RIP = [];
+function kf(t, xy) { CK.push([t, xy[0], xy[1]]); }
+const tapPt = i => screenPt(phoneState(TAPS[i][1]), ...TAPS[i][2]);
+kf(6.05, V ? [W + 60, H * .7] : [W + 60, H * .95]);
+TAPS.forEach(([n, tt], i) => { kf(tt - .08, tapPt(i)); kf(tt + .08, tapPt(i)); DOWN.push([tt, tt + .1]); RIP.push([tt, ...tapPt(i), C.app]); });
+kf(8.2, V ? [W * .85, H + 80] : [W * .8, H + 80]);
+const sw0 = [LP.cx + (V ? 160 : 220), LP.cy + (V ? 120 : 60)];
+kf(12.35, V ? [W + 60, H * .75] : [W * .85, H + 80]);
+[12.62, 13.12, 13.62].forEach(t0 => { kf(t0 - .06, sw0); kf(t0, sw0); kf(t0 + .16, [sw0[0] - (V ? 260 : 340), sw0[1] - 10]); kf(t0 + .38, sw0); DOWN.push([t0, t0 + .16]); });
+kf(14.2, V ? [W + 80, H * .9] : [W + 80, H * .95]);
+kf(15.5, V ? [W + 60, H * .6] : [W * .7, H + 80]);
+kf(15.8, [LB.A.x + 40, LB.A.y + 20]); kf(15.85, [LB.A.x + 40, LB.A.y + 20]);
+DOWN.push([SWAP[0], SWAP[1]]);
+kf(16.3, [LB.B.x + 40, LB.B.y + 20]); kf(16.7, V ? [W + 80, H * .62] : [W * .88, H + 80]);
+kf(23.1, V ? [W + 60, H * .7] : [W + 60, H * .8]);
+kf(23.55, [LS.x + 140, LS.y + LS.dy + 10]); kf(23.72, [LS.x + 140, LS.y + LS.dy + 10]);
+kf(24.6, [LS.x + 260, LS.y + LS.dy + 150]);
+DOWN.push([23.6, 23.7]); RIP.push([23.6, LS.x + 140, LS.y + LS.dy + 10, C.leaf]);
+[12.62, 13.12, 13.62].forEach(t0 => RIP.push([t0, ...sw0, C.leaf]));
+RIP.push([SWAP[0], LB.A.x + 40, LB.A.y + 20, C.leaf], [SWAP[1], LB.B.x + 40, LB.B.y + 20, C.leaf]);
+const CURSOR_ON = [[6.05, 8.2], [12.35, 14.2], [15.5, 16.7], [23.1, 25]];
+function cursorAt(t) {
+  if (!CURSOR_ON.some(([a, b]) => t >= a && t <= b)) return null;
+  let x = CK[0][1], y = CK[0][2];
+  for (let i = 0; i < CK.length - 1; i++) {
+    const [ta, xa, ya] = CK[i], [tb, xb, yb] = CK[i + 1];
+    if (t >= ta && t <= tb) { const p = ioCub(P(t, ta, tb)); x = lerp(xa, xb, p); y = lerp(ya, yb, p); break; }
+    if (t > tb) { x = xb; y = yb; }
+  }
+  if (t >= SWAP[0] && t <= SWAP[1]) { const b = bagPos(t); x = b.x + 40; y = b.y + 20; }
+  return {x, y, down: DOWN.some(([a, b]) => t >= a && t <= b)};
+}
+const ripEls = RIP.map(([, , , c]) => { const r = el('div', 'abs ripple', fx); r.style.borderColor = c; return r; });
+
+// ---------- camera shake ----------
+const SHAKE = [[0, 7], [.5, 7], [1, 9], [1.5, 9], [2, 22], [3.0, 10], [3.5, 5], [6.5, 4], [7, 4], [7.5, 5], [12.05, 5], [14.45, 14], [15.0, 6], [19.5, 18], [22.0, 5]];
+function shake(t) {
+  let x = 0, y = 0;
+  SHAKE.forEach(([ti, a]) => { if (t >= ti && t < ti + .4) { const d = Math.exp(-(t - ti) * 14) * a; x += Math.sin((t - ti) * 95) * d; y += Math.cos((t - ti) * 71) * d; } });
+  return [x, y];
+}
+
+// ---------- seek ----------
+window.seek = function (t) {
+  const b = bgAt(t); if (b !== lastBg) { bg.style.background = b; lastBg = b; }
+  hook(t); app(t); f2(t); port(t); barter(t); num(t); sig(t);
+  barsAt(t); irisAt(t); flashAt(t);
+  const [sx, sy] = shake(t); cam.style.transform = `translate(${sx}px,${sy}px)`;
+  const c = cursorAt(t);
+  if (c) { cursor.style.display = ''; cursor.style.transform = `translate(${c.x - 4}px,${c.y - 4}px) scale(${c.down ? .82 : 1})`; }
+  else cursor.style.display = 'none';
+  RIP.forEach(([ti, x, y], i) => { const p = P(t, ti, ti + .5); set(ripEls[i], {x, y, s: lerp(.15, 1.5, oExpo(p)), o: t >= ti && p < 1 ? 1 - p : 0}); });
+};
+
+// ---------- eventos para a trilha (fonte única) ----------
+window.EVENTS = {
+  dur: DUR,
+  music: {drop: 3.0, light: [[3.0, 6.0]], groove: [[3.0, 18.0], [19.5, 21.0]], arp: [[6.0, 12.0], [15.0, 18.0], [19.5, 21.0]],
+          breakdown: [18.0, 19.5], risers: [[2.0, 2.96], [21.0, 21.5]], final: 21.5,
+          prog: ['Dm', 'Bb', 'F', 'C', 'Dm', 'Bb', 'F', 'C', 'Dm', 'C']},
+  clicks: [6.5, 7.0, 7.5, 12.62, 12.78, 13.12, 13.28, 13.62, 13.78, 15.85, 16.3, 23.6],
+  soft: [12.78, 13.28, 13.78, 16.3],
+  whoosh: [[2.62, 3.0, 'zoom'], [2.98, 3.5, 'm'], [3.5, 3.95, 's'], [5.3, 5.7, 's'], [6.53, 6.83, 's'], [7.03, 7.33, 's'], [7.53, 7.83, 's'],
+           [8.25, 8.9, 'm'], [8.7, 9.1, 'L'], [9.85, 10.25, 's'], [11.8, 12.15, 'L'], [12.63, 12.95, 's'], [13.13, 13.45, 's'], [13.63, 13.95, 's'],
+           [14.05, 14.4, 'm'], [14.7, 15.1, 'L'], [15.85, 16.3, 's'], [16.35, 16.6, 's'], [17.7, 18.1, 'L'], [21.05, 21.5, 'L']],
+  impacts: [[0, .7], [.5, .7], [1, .8], [1.5, .8], [2, 1.0], [3.0, 1.0], [3.5, .4], [9.15, .45], [12.05, .5], [14.45, .85], [15.0, .55], [19.5, 1.0], [21.5, .9]],
+  plucks: [...homeCards.map(c => [c.t0, 77 + (c.z * 2) % 9, .3]),
+           ...TAPS.flatMap(([, tt]) => [0, 1, 2].map(j => [tt + .2 + j * .08, 84 + j * 3, .25])),
+           ...ROT.map((r, i) => [r, [77, 81, 84, 89][i], .4]),
+           [15.25, 77, .35], ...BT.map((b, i) => [b, [81, 84, 86, 89][i], .45])],
+  letters: LETTERS.map((_, i) => T8 + .02 + i * .05),
+  leaf: T8 + .45, bell2: 23.6,
+  grains: Array.from({length: 33}, (_, i) => 15.3 + i * .012 + .25),
+  ticks: Array.from({length: 15}, (_, i) => 22.6 + i * (0.7 / 15)),
+  count: [LT0, LT1]
+};
+window.READY = (async () => {
+  await Promise.all([400, 500, 600, 700, 800, 900].map(w => document.fonts.load(`${w} 100px Poppins`, 'AÃÉÊÇ+60')));
+  await document.fonts.ready;
+  const extra = ['logo-lettering.png', 'logo-folha.png', 'folha-solo.png'].map(f => { const i = new Image(); i.src = R + f; return i; });
+  await Promise.all([...document.images, ...extra].map(i => i.decode().catch(() => {})));
+  await new Promise(r => setTimeout(r, 80));
+  seek(0); return true;
+})();
+</script>
+</body>
+</html>

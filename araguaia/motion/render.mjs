@@ -3,6 +3,7 @@
 //   node render.mjs frames <w> <h> <saida_dir> <t1,t2,...>   -> PNGs avulsos (folha de contato)
 //   node render.mjs video  <w> <h> <saida.mp4> [fps] [audio.wav]
 //   node render.mjs events <saida.json>                       -> eventos para a trilha
+// PAGE=index-25s.html seleciona outra linha do tempo (padrão: index.html, 20 s)
 import { createRequire } from 'module';
 import { spawn } from 'child_process';
 import { mkdirSync, writeFileSync, existsSync } from 'fs';
@@ -14,12 +15,12 @@ let pw;
 try { pw = require('playwright'); } catch { pw = require('/opt/node22/lib/node_modules/playwright'); }
 const here = path.dirname(fileURLToPath(import.meta.url));
 const [mode, ...args] = process.argv.slice(2);
-const DUR = 20;
+const PAGE = process.env.PAGE || 'index.html';
 
 async function open(w, h) {
   const browser = await pw.chromium.launch({ args: ['--allow-file-access-from-files', '--force-color-profile=srgb'] });
   const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
-  await page.goto('file://' + path.join(here, 'index.html') + `?w=${w}&h=${h}`);
+  await page.goto('file://' + path.join(here, PAGE) + `?w=${w}&h=${h}`);
   await page.evaluate(() => window.READY);
   return { browser, page };
 }
@@ -47,6 +48,7 @@ if (mode === 'events') {
   ff.push('-c:v', 'libx264', '-preset', 'slow', '-crf', '15', '-pix_fmt', 'yuv420p', '-color_primaries', 'bt709',
     '-color_trc', 'bt709', '-colorspace', 'bt709', '-movflags', '+faststart', '-n', out);
   const enc = spawn('ffmpeg', ff, { stdio: ['pipe', 'inherit', 'inherit'] });
+  const DUR = await page.evaluate(() => (window.EVENTS && window.EVENTS.dur) || 20);
   const N = Math.round(DUR * fps);
   const t0 = Date.now();
   for (let i = 0; i < N; i++) {
