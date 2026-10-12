@@ -105,7 +105,8 @@ hookLines.forEach((ln, i) => {
   ln.forEach(w => {
     const s = el('span', null, d, w);
     if (w === 'NÃO') s.style.cssText = `background:${C.red};padding:0 .14em;border-radius:.06em`;
-    hookWords.push({e: s, t: hookTimes[w], w, grow: d.children.length > 1});
+    if (d.children.length > 1) s.style.transformOrigin = '0% 60%';
+    hookWords.push({e: s, t: hookTimes[w], w, line: i, grow: d.children.length > 1});
   });
 });
 const esperar = text('ESPERAR.', 300, 900, '#fff', S.hook, 'letter-spacing:-.03em');
@@ -117,12 +118,14 @@ function hook(t) {
   show(S.hook, t < 3.05);
   hookStripes.style.transform = `translateX(${-t * 90}px)`;
   hookStripes.style.display = t < 2 ? '' : 'none';
+  // a line starts centred on its first word and slides as the second word lands
+  const shift = {};
+  hookWords.forEach(w => { if (w.grow) { w.nat = w.nat || ow(w.e) + hk.size * .22; shift[w.line] = w.nat / 2 * (1 - ioCub(P(t, w.t, w.t + .2))); } });
   hookWords.forEach(w => {
     const k = slam(t, w.t, .3, 2.4);
     w.e.style.opacity = t < 2 ? k.o : 0;
-    w.e.style.transform = `scale(${k.s}) translateY(${(1 - oExpo(P(t, w.t, w.t + .3))) * 40}px)`;
+    w.e.style.transform = `translateX(${shift[w.line] || 0}px) scale(${k.s}) translateY(${(1 - oExpo(P(t, w.t, w.t + .3))) * 40}px)`;
     w.e.style.filter = k.b > .3 ? `blur(${k.b}px)` : '';
-    if (w.grow) { w.nat = w.nat || ow(w.e) + hk.size * .22; w.e.style.marginLeft = (-(1 - oExpo(P(t, w.t, w.t + .22))) * w.nat) + 'px'; }
     if (w.w === 'NÃO') w.e.style.clipPath = `inset(0 ${(1 - oExpo(P(t, 1, 1.14))) * 100}% 0 0)`;
   });
   if (t >= 2) {
