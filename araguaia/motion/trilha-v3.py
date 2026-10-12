@@ -1,6 +1,6 @@
-"""Trilha original de 25 s sintetizada em código (120 BPM) + efeitos de interface.
+"""Trilha v3 (duração lida dos eventos) sintetizada em código (120 BPM) + efeitos de interface.
 
-Uso: python3 trilha25.py eventos.json saida.wav
+Uso: python3 trilha-v3.py eventos.json saida.wav
 Os eventos (cliques, whooshes, impactos) vêm da própria linha do tempo (index.html -> window.EVENTS).
 Grade musical: compasso começa em 3,0 s (o gancho de 0–3 s é anacruse de 6 tempos).
 """
