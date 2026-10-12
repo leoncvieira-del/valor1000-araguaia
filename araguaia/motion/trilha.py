@@ -346,10 +346,10 @@ for i, tm in enumerate(ev['pops'][1:2]):
 for tm in ev.get('bag', []):                                         # sacaria entra
     add('sfx', sub_hit(0.35), tm)
     add('sfx', pluck(77, 0.25, bright=1.5), tm, gain=0.35)
-for k, tm in enumerate(ev.get('grains', [])):                         # grãos caindo na pilha
-    t = tt(int(0.04 * SR))
-    add('sfx', bandnoise(0.04, 1500, 7000) * np.exp(-t * 160) * rng.uniform(0.25, 0.45), tm + rng.uniform(-0.004, 0.004),
-        pan=rng.uniform(-0.5, 0.5))
+for k, tm in enumerate(ev.get('chips', [])):                          # categorias saltam da sacaria
+    p = pluck([77, 81, 84, 86, 89][k % 5], 0.25, bright=2.2)
+    add('sfx', p, tm, pan=-0.6 + 0.3 * k, gain=0.42)
+    add('verb', p, tm, gain=0.3)
 for tm in ev['ticks']:
     t = tt(int(0.03 * SR))
     add('sfx', bandnoise(0.03, 2500, 9000) * np.exp(-t * 300) * rng.uniform(0.4, 0.6), tm + rng.uniform(-0.006, 0.006),

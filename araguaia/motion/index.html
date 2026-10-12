@@ -289,66 +289,60 @@ function f2(t) {
   set(lPe, {x: (V ? W / 2 : W * .76) + w.dx, y: V ? H * .9 : H * .86, s: k2.s, o: k2.o, b: k2.b + w.blur});
 }
 
-// ---------- F3 (11 – 13.5s) : Barter — insumo vai, grão vem ----------
-const LF3 = V ? {bw: {x: 540, y: 300}, A: {x: 540, y: 820}, B: {x: 540, y: 1480}, sw: {x: 880, y: 1150}, kb: 2.3}
-              : {bw: {x: 960, y: 210}, A: {x: 560, y: 640}, B: {x: 1360, y: 640}, sw: {x: 960, y: 640}, kb: 2.0};
-const barterWord = el('div', 'abs t', S.f3);
-barterWord.style.cssText += `font-size:${V ? 200 : 190}px;font-weight:900;color:${C.navy};letter-spacing:-.03em;display:flex`;
-const barterLetters = [...'BARTER'].map(ch => { const s = el('span', null, barterWord, ch); s.style.display = 'inline-block'; return s; });
-const bag = el('div', 'abs', S.f3); bag.style.cssText += 'width:238px;height:214px;filter:drop-shadow(0 30px 40px rgba(14,34,70,.35))';
+// ---------- F3 (11 – 13.5s) : Portfólio completo, produtos de qualidade ----------
+// categorias citadas no próprio site (Nossa História, Parques Industriais, Pecuária)
+const LF3 = V ? {ty: [250, 380], ts: 124, bag: {x: 540, y: 1090, k: 2.7}, rx: 215, ry: 570, seal: {x: 780, y: 1340, s: 1.25}, chip: 44}
+              : {ty: [150, 150], ts: 112, bag: {x: 960, y: 610, k: 2.15}, rx: 640, ry: 330, seal: {x: 1150, y: 770, s: 1.05}, chip: 42};
+const f3bg = photo('foto-fabrica.png', S.f3);
+const f3tint = el('div', 'abs', S.f3);
+f3tint.style.cssText += `width:${W}px;height:${H}px;transform-origin:0 0;background:radial-gradient(90% 80% at 50% 55%, rgba(8,26,66,.55) 0%, rgba(4,14,38,.9) 100%)`;
+const pT = [['PORTFÓLIO', '#fff'], ['COMPLETO', C.leaf]].map(([w, c]) => text(w, LF3.ts, 900, c, S.f3, 'letter-spacing:-.02em'));
+const bag = el('div', 'abs', S.f3); bag.style.cssText += 'width:238px;height:214px;z-index:5;filter:drop-shadow(0 34px 40px rgba(0,0,0,.45))';
 const bagImg = el('img', null, bag); bagImg.src = R + 'sacaria.png'; bagImg.style.cssText = 'width:100%;border-radius:10px;display:block';
-const GR = [];
-(function () { // deterministic little pile of soy grains
-  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let r = 0; r < 6; r++) for (let c = 0; c < 8 - r; c++) {
-    const e = el('div', 'abs', S.f3);
-    e.style.cssText += 'width:40px;height:33px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#fbe9b7 0,#e2bd66 45%,#b48834 100%);box-shadow:0 4px 8px rgba(80,55,10,.25)';
-    GR.push({e, dx: (c - (7 - r) / 2) * 38 + (rnd() - .5) * 10, dy: -r * 28 + (rnd() - .5) * 6, r: rnd() * 180, i: GR.length});
-  }
-})();
-const lIn = text('INSUMOS', V ? 60 : 54, 800, C.navy, S.f3, 'letter-spacing:.12em');
-const lGr = text('GRÃO', V ? 60 : 54, 800, C.leaf, S.f3, 'letter-spacing:.12em');
-const swapIcon = el('div', 'abs', S.f3,
-  `<svg width="150" height="150" viewBox="-75 -75 150 150"><g fill="none" stroke="${C.leaf}" stroke-width="11" stroke-linecap="round">
-   <path d="M -52 -18 A 56 56 0 0 1 46 -32"/><path d="M 52 18 A 56 56 0 0 1 -46 32"/></g>
-   <path d="M 58 -52 L 52 -18 L 22 -36 Z" fill="${C.leaf}"/><path d="M -58 52 L -52 18 L -22 36 Z" fill="${C.leaf}"/></svg>`);
-const SWAP = [12.0, 12.45];
-function along(a, b, p, bow) { // arc between two points
-  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-  const nx = V ? bow : 0, ny = V ? 0 : bow;
-  const q = Math.sin(p * Math.PI);
-  return {x: lerp(a.x, b.x, p) + nx * q, y: lerp(a.y, b.y, p) + ny * q};
-}
-function bagPos(t) { return along(LF3.A, LF3.B, ioCub(P(t, ...SWAP)), -150); }
+const CATS = ['FERTILIZANTES', 'SEMENTES', 'NUTRIÇÃO ANIMAL', 'DEFENSIVOS', 'VETERINÁRIOS'];
+const chips = CATS.map((c, i) => {
+  const e = text(c, LF3.chip, 700, C.navy, S.f3, `background:#fff;padding:.42em .9em;border-radius:999px;letter-spacing:.06em;box-shadow:0 14px 30px -8px rgba(0,0,0,.45)`);
+  const dot = el('span', null, null); dot.style.cssText = `display:inline-block;width:.5em;height:.5em;border-radius:50%;background:${C.leaf};margin-right:.5em;vertical-align:.08em`;
+  e.prepend(dot); return e;
+});
+const seal = el('div', 'abs', S.f3,
+  `<svg width="250" height="250" viewBox="-125 -125 250 250">
+    <defs><path id="ring" d="M 0 -86 A 86 86 0 1 1 -0.1 -86"/></defs>
+    <circle r="122" fill="${C.leaf}"/><circle r="110" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="2 7"/>
+    <circle r="62" fill="#fff"/>
+    <text fill="#fff" font-family="Poppins" font-weight="800" font-size="21"><textPath href="#ring" textLength="528" lengthAdjust="spacing">QUALIDADE · ARAGUAIA · QUALIDADE · ARAGUAIA ·</textPath></text>
+    <image href="${R}folha-solo.png" x="-44" y="-33" width="88" height="63"/></svg>`);
+seal.style.zIndex = 7;
+const CLICK3 = 11.55;
 function f3(t) {
   show(S.f3, t >= 10.9 && t < 13.55);
   const w = whip(t, 10.95, 99);
-  set(barterWord, {x: LF3.bw.x + w.dx, y: LF3.bw.y, o: t >= 11.0 ? 1 : 0, b: w.blur});
-  barterLetters.forEach((s, i) => {
-    const ti = 11.05 + i * .045, k = slam(t, ti, .3, 2.6);
-    s.style.opacity = k.o;
-    s.style.transform = `translateY(${(1 - oBack(P(t, ti, ti + .3), 2.2)) * 70}px) scale(${k.s * (1 + .04 * Math.max(0, Math.sin((t - 12.5) * 12)) * P(t, 12.5, 12.6) * (1 - P(t, 12.8, 13)))})`;
+  // aerial photo of the real plant, pushing in
+  rect(f3bg, w.dx, 0, W, H);
+  f3bg.firstChild.style.transform = `scale(${lerp(1.3, 1.06, oCub(P(t, 10.95, 13.5)))})`;
+  f3bg.style.filter = `blur(${(V ? 3 : 1.5) + w.blur}px)`;
+  rect(f3tint, w.dx, 0, W, H);
+  pT.forEach((e, i) => {
+    const k = slam(t, 11.05 + i * .12, .3, 2);
+    set(e, {x: (V ? W / 2 : (i ? W / 2 + 22 + ow(e) / 2 : W / 2 - 22 - ow(e) / 2)) + w.dx, y: LF3.ty[i], s: k.s, o: k.o, b: k.b + w.blur});
   });
-  const pin = P(t, 11.35, 11.7), bp = bagPos(t);
-  set(bag, {x: bp.x + w.dx, y: bp.y + Math.sin(t * 3) * 6, s: LF3.kb * oBack(pin, 2.2), r: (1 - oBack(pin, 2)) * -20 + Math.sin(P(t, ...SWAP) * Math.PI) * 10,
-    o: t >= 11.35 ? 1 : 0});
-  GR.forEach(g => {
-    const ti = 11.45 + g.i * .014, p = P(t, ti, ti + .32);
-    const sp = ioCub(P(t, SWAP[0] + .1 + g.i * .006, SWAP[1] + .12 + g.i * .006));
-    const from = {x: LF3.B.x + g.dx, y: LF3.B.y + 70 + g.dy}, to = {x: LF3.A.x + g.dx, y: LF3.A.y + 70 + g.dy};
-    const pos = along(from, to, sp, 150 + (g.i % 5) * 18);
-    const drop = (1 - oBack(p, 1.6)) * -(H * .55 + g.i * 6);
-    set(g.e, {x: pos.x + w.dx, y: pos.y + (V ? 0 : drop) + (V ? drop * 0 : 0) + (V ? (1 - oBack(p, 1.6)) * (H * .45) : 0),
-      r: g.r + sp * 220, o: t >= ti ? 1 : 0});
+  // the real bag drops in, gets clicked, squashes
+  const pd = P(t, 11.25, 11.6), squash = Math.exp(-Math.max(0, t - CLICK3) * 12) * (t >= CLICK3 ? 1 : 0);
+  const B = LF3.bag;
+  set(bag, {x: B.x + w.dx, y: lerp(B.y - H * .8, B.y, oBack(pd, 1.3)) + Math.sin(t * 3.2) * 8, s: B.k,
+    sx: 1 + squash * .12, sy: 1 - squash * .14, r: (1 - oExpo(pd)) * 25 + Math.sin(t * 2.1) * 2, o: t >= 11.25 ? 1 : 0});
+  // categories burst out of the bag and orbit
+  chips.forEach((e, i) => {
+    const tc = CLICK3 + .05 + i * .07, p = oBack(P(t, tc, tc + .4), 1.6);
+    const ang = (-90 + i * 72 + (t - CLICK3) * 34) * Math.PI / 180;
+    const sn = Math.sin(ang);
+    e.style.zIndex = sn > -.2 ? 6 : 4;
+    set(e, {x: B.x + Math.cos(ang) * LF3.rx * p + w.dx, y: B.y + sn * LF3.ry * p, s: p * (.88 + .12 * sn), o: t >= tc ? Math.min(1, P(t, tc, tc + .08)) * (.75 + .25 * (sn + 1) / 2) : 0});
   });
-  // labels travel with their objects
-  const gp = along(LF3.B, LF3.A, ioCub(P(t, SWAP[0] + .1, SWAP[1] + .2)), 150);
-  const kI = slam(t, 11.55, .28, 1.6), kG = slam(t, 11.75, .28, 1.6);
-  const off = V ? 290 : 300;
-  set(lIn, {x: bp.x + w.dx, y: bp.y + off, s: kI.s, o: kI.o, b: kI.b});
-  set(lGr, {x: gp.x + w.dx, y: gp.y + off - (V ? 40 : 30), s: kG.s, o: kG.o, b: kG.b});
-  const sw = oBack(P(t, 11.85, 12.1), 2);
-  set(swapIcon, {x: LF3.sw.x + w.dx, y: LF3.sw.y, s: sw * (V ? 1.1 : 1), r: (V ? 90 : 0) + 180 * ioCub(P(t, ...SWAP)), o: t >= 11.85 ? 1 : 0});
+  // quality seal stamps in on the beat
+  const ps = P(t, 12.5, 12.72);
+  set(seal, {x: LF3.seal.x + w.dx, y: LF3.seal.y, s: LF3.seal.s * lerp(3.2, 1, oExpo(ps)), r: lerp(-40, -12, oExpo(ps)) + (t - 12.5) * 22,
+    o: t >= 12.5 ? P(t, 12.5, 12.56) : 0, b: (1 - oExpo(ps)) * 10});
 }
 
 // ---------- NUMBER (13.5 – 16.5s) : +60 lojas em 8 estados — 60 folhas brotam ----------
@@ -398,6 +392,8 @@ const letterEls = LETTERS.map(([a, b]) => {
 });
 const leaf = el('div', null, logoBox);
 leaf.style.cssText = `position:absolute;left:0;top:0;width:${logoW}px;height:${logoH}px;background:url(${R}logo-folha.png) no-repeat;background-size:100% 100%;transform-origin:${468.5 * LS.k}px ${87 * LS.k}px`;
+// little burst of leaves when the logo leaf sprouts (echo of the 60 leaves)
+const burst = Array.from({length: 16}, (_, i) => { const e = el('img', 'abs', S.sig); e.src = R + 'folha-solo.png'; return e; });
 const DOMAIN = 'araguaia.com.br';
 const dom = text('', V ? 70 : 64, 600, C.navy, S.sig, 'letter-spacing:.01em');
 const domMeasure = text(DOMAIN, V ? 70 : 64, 600, C.navy, S.sig, 'letter-spacing:.01em;visibility:hidden');
@@ -416,6 +412,12 @@ function sig(t) {
   const lp = P(t, 16.95, 17.4);
   leaf.style.opacity = P(t, 16.95, 17.0);
   leaf.style.transform = `rotate(${lerp(-38, 0, oBack(lp, 2)) + Math.sin((t - 17.4) * 3) * 1.2 * P(t, 17.4, 18)}deg) scale(${oBack(lp, 2.6)})`;
+  const bx = LS.x - logoW / 2 + 468.5 * LS.k, by = LS.y - logoH / 2 + 60 * LS.k;
+  burst.forEach((e, i) => {
+    const a = (i / burst.length) * Math.PI * 2 + .3, p = P(t, 17.0, 17.9), d = oExpo(p) * (V ? 420 : 380) * (.7 + .3 * ((i * 7) % 5) / 4);
+    set(e, {x: bx + Math.cos(a) * d, y: by + Math.sin(a) * d * .8 + p * p * 120, s: .38 * (1 - p * .5), r: a * 57.3 + 90 + p * 200,
+      o: t >= 17.0 && p < 1 ? 1 - p * p : 0});
+  });
   const n = Math.floor(P(t, 17.5, 18.2) * DOMAIN.length + .001);
   dom.textContent = DOMAIN.slice(0, n);
   const dw = ow(domMeasure), dy = LS.y + LS.dy, cw = ow(dom);
@@ -499,18 +501,18 @@ kf(8.5, V ? [W * .8, H + 80] : [W * .7, H + 80]);
 kf(8.7, grab); kf(8.72, grab);
 kf(8.9, [grab[0], grab[1] - 300]); kf(9.5, [grab[0] + 260, H + 120]);
 DOWN.push([8.72, 8.9]);
-// F3 drag the bag onto the grain
-kf(11.6, V ? [W + 60, H * .7] : [W * .75, H + 80]);
-kf(11.97, [LF3.A.x + 40, LF3.A.y + 20]); kf(12.0, [LF3.A.x + 40, LF3.A.y + 20]);
-DOWN.push([12.0, 12.45]);
-kf(12.45, [LF3.B.x + 40, LF3.B.y + 20]); kf(13.2, V ? [W + 80, H * .62] : [W * .88, H + 80]);
+// F3 click on the real bag -> portfolio bursts out
+kf(11.2, V ? [W + 60, H * .8] : [W * .8, H + 80]);
+kf(11.5, [LF3.bag.x + 50, LF3.bag.y + 40]); kf(11.7, [LF3.bag.x + 50, LF3.bag.y + 40]);
+kf(12.4, V ? [W + 80, H * .95] : [W + 80, H * .98]);
+DOWN.push([CLICK3, CLICK3 + .1]);
 // SIGNATURE click on the domain
 kf(18.0, V ? [W + 60, H * .9] : [W + 60, H * .95]);
 kf(18.45, [LS.x + 140, LS.y + LS.dy + 10]); kf(18.62, [LS.x + 140, LS.y + LS.dy + 10]);
 kf(19.4, [LS.x + 260, LS.y + LS.dy + 150]);
 DOWN.push([18.5, 18.6]); RIP.push([18.5, LS.x + 140, LS.y + LS.dy + 10, C.leaf]);
-RIP.push([8.72, ...grab, C.leaf], [12.0, LF3.A.x + 40, LF3.A.y + 20, C.leaf], [12.45, LF3.B.x + 40, LF3.B.y + 20, C.leaf]);
-const CURSOR_ON = [[5.95, 8.45], [8.5, 9.5], [11.6, 13.2], [18.0, 20]];
+RIP.push([8.72, ...grab, C.leaf], [CLICK3, LF3.bag.x + 50, LF3.bag.y + 40, C.leaf]);
+const CURSOR_ON = [[5.95, 8.45], [8.5, 9.5], [11.2, 12.4], [18.0, 20]];
 function cursorAt(t) {
   if (!CURSOR_ON.some(([a, b]) => t >= a && t <= b)) return null;
   let x = CK[0][1], y = CK[0][2];
@@ -519,14 +521,13 @@ function cursorAt(t) {
     if (t >= ta && t <= tb) { const p = ioCub(P(t, ta, tb)); x = lerp(xa, xb, p); y = lerp(ya, yb, p); break; }
     if (t > tb) { x = xb; y = yb; }
   }
-  if (t >= SWAP[0] && t <= SWAP[1]) { const b = bagPos(t); x = b.x + 40; y = b.y + 20; }
   const down = DOWN.some(([a, b]) => t >= a && t <= b);
   return {x, y, down};
 }
 const ripEls = RIP.map(([ti, x, y, c]) => { const r = el('div', 'abs ripple', fx); r.style.borderColor = c; return r; });
 
 // ---------- camera shake ----------
-const SHAKE = [[0, 7], [.5, 7], [1, 9], [1.5, 9], [2, 22], [3.0, 10], [6.5, 4], [7, 4], [7.5, 5], [15.0, 18], [17.0, 5]];
+const SHAKE = [[0, 7], [.5, 7], [1, 9], [1.5, 9], [2, 22], [3.0, 10], [6.5, 4], [7, 4], [7.5, 5], [11.6, 6], [12.5, 14], [15.0, 18], [17.0, 5]];
 function shake(t) {
   let x = 0, y = 0;
   SHAKE.forEach(([ti, a]) => { if (t >= ti && t < ti + .4) { const d = Math.exp(-(t - ti) * 14) * a; x += Math.sin((t - ti) * 95) * d; y += Math.cos((t - ti) * 71) * d; } });
@@ -550,15 +551,15 @@ window.seek = function (t) {
 
 // events consumed by the soundtrack generator (single source of truth)
 window.EVENTS = {
-  clicks: [6.5, 7.0, 7.5, 8.72, 8.9, 12.0, 12.45, 18.5],
-  soft: [8.9, 12.45],
+  clicks: [6.5, 7.0, 7.5, 8.72, 8.9, 11.55, 18.5],
+  soft: [8.9],
   whoosh: [[2.62, 3.0, 'zoom'], [3.38, 3.55, 's'], [3.62, 3.8, 's'], [3.88, 4.08, 's'], [5.45, 5.95, 'm'], [8.2, 8.62, 'L'],
-           [8.72, 9.18, 'scroll'], [9.18, 9.55, 'm'], [9.68, 10.05, 's'], [10.8, 11.15, 'L'], [12.0, 12.45, 's'], [12.12, 12.6, 's'],
+           [8.72, 9.18, 'scroll'], [9.18, 9.55, 'm'], [9.68, 10.05, 's'], [10.8, 11.15, 'L'], [11.1, 11.4, 's'], [11.58, 11.95, 'm'],
            [13.2, 13.62, 'L'], [16.05, 16.5, 'L']],
-  impacts: [[0, .7], [.5, .7], [1, .8], [1.5, .8], [2, 1.0], [3.0, 1.0], [9.3, .45], [15.0, 1.0], [16.5, .9]],
+  impacts: [[0, .7], [.5, .7], [1, .8], [1.5, .8], [2, 1.0], [3.0, 1.0], [9.3, .45], [11.6, .5], [12.5, .85], [15.0, 1.0], [16.5, .9]],
   pops: [4.5, 11.05, 16.52, 16.57, 16.62, 16.67, 16.72, 16.77, 16.82, 16.87, 16.95],
-  bag: [11.35],
-  grains: Array.from({length: 33}, (_, i) => 11.45 + i * .014 + .25),
+  bag: [11.5],
+  chips: CATS.map((_, i) => CLICK3 + .05 + i * .07),
   ticks: Array.from({length: 15}, (_, i) => 17.5 + i * (0.7 / 15)),
   count: [13.55, 15.0]
 };
