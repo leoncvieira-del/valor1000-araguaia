@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Araguaia Motion</title>
+<style>
+@font-face{font-family:Poppins;font-weight:400;src:url(../assets/fontes/poppins-latin-400-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:500;src:url(../assets/fontes/poppins-latin-500-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:600;src:url(../assets/fontes/poppins-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:700;src:url(../assets/fontes/poppins-latin-700-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:800;src:url(../assets/fontes/poppins-latin-800-normal.woff2) format('woff2')}
+@font-face{font-family:Poppins;font-weight:900;src:url(../assets/fontes/poppins-latin-900-normal.woff2) format('woff2')}
+html,body{margin:0;padding:0;background:#000;overflow:hidden}
+#stage{position:relative;overflow:hidden;font-family:Poppins,sans-serif;-webkit-font-smoothing:antialiased}
+.abs{position:absolute;left:0;top:0;transform-origin:50% 50%}
+.layer{position:absolute;left:0;top:0;width:100%;height:100%}
+.t{white-space:nowrap;line-height:1}
+.line{position:absolute;left:0;width:100%;display:flex;justify-content:center;gap:.22em;line-height:1;white-space:nowrap}
+.line span{display:inline-block;transform-origin:50% 60%}
+.piece{overflow:hidden;border-radius:16px;box-shadow:0 30px 70px -10px rgba(0,0,0,.55),0 0 0 1.5px rgba(255,255,255,.14)}
+.piece img,.card img{display:block;width:100%}
+.card{overflow:hidden;border-radius:26px;background:#fff;box-shadow:0 50px 90px -25px rgba(14,34,70,.45),0 0 0 1px rgba(14,34,70,.08)}
+.sel{position:absolute;background:rgba(51,144,255,.32);border-radius:4px}
+.ripple{width:140px;height:140px;border-radius:50%;border:7px solid #64B240;box-sizing:border-box}
+.bar{position:absolute;top:-10%;height:120%}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+// ---------- setup ----------
+const Q = new URLSearchParams(location.search);
+const W = +Q.get('w') || 1920, H = +Q.get('h') || 1080, V = H > W;
+const R = '../assets/recortes/';
+const C = {navy:'#1E3D6C', deep:'#061331', red:'#CF312E', leaf:'#60BC4D', app:'#64B240', gray:'#F0F0F0'};
+const stage = document.getElementById('stage');
+stage.style.width = W + 'px'; stage.style.height = H + 'px';
+
+// ---------- easing ----------
+const cl = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const P = (t, a, b) => cl((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const oExpo = p => p >= 1 ? 1 : 1 - Math.pow(2, -10 * p);
+const iExpo = p => p <= 0 ? 0 : Math.pow(2, 10 * (p - 1));
+const oCub = p => 1 - Math.pow(1 - p, 3);
+const ioCub = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const oBack = (p, s = 1.70158) => { const c = s + 1; return 1 + c * Math.pow(p - 1, 3) + s * Math.pow(p - 1, 2); };
+
+// ---------- dom helpers ----------
+function el(tag, cls, parent, html) {
+  const e = document.createElement(tag); if (cls) e.className = cls;
+  if (html != null) e.innerHTML = html; (parent || stage).appendChild(e); return e;
+}
+function ow(e) { const d = e.style.display; e.style.display = ''; const w = e.offsetWidth; e.style.display = d; return w; }
+function layer(parent) { return el('div', 'layer', parent); }
+function show(e, v) { e.style.display = v ? '' : 'none'; }
+// o: x,y = center; s,sx,sy scale; r rotation; o opacity; b blur
+function set(e, o) {
+  if (o.o === 0) { e.style.display = 'none'; return; }
+  e.style.display = '';
+  const s = o.s ?? 1;
+  e.style.transform = `translate(${o.x ?? 0}px,${o.y ?? 0}px) translate(-50%,-50%) rotate(${o.r ?? 0}deg) scale(${s * (o.sx ?? 1)},${s * (o.sy ?? 1)})`;
+  e.style.opacity = o.o ?? 1;
+  e.style.filter = o.b > .3 ? `blur(${o.b}px)` : '';
+}
+function piece(src, w, h, parent, cls = 'piece') {
+  const d = el('div', 'abs ' + cls, parent); d.style.width = w + 'px'; d.style.height = h + 'px';
+  const i = el('img', null, d); i.src = R + src; return d;
+}
+function text(str, size, weight, color, parent, extra = '') {
+  const d = el('div', 'abs t', parent, str);
+  d.style.cssText += `font-size:${size}px;font-weight:${weight};color:${color};${extra}`;
+  return d;
+}
+// kinetic slam: returns transform params for a word that lands at ti
+function slam(t, ti, d = .28, from = 2.1) {
+  const p = P(t, ti, ti + d), e = oExpo(p);
+  return {s: lerp(from, 1, e), o: t < ti ? 0 : P(t, ti, ti + .04), b: (1 - e) * 16};
+}
+
+// ---------- global layers ----------
+const bg = el('div', 'layer', stage);
+const cam = el('div', 'layer', stage);
+const deco = layer(cam);           // site line motif
+const S = {};                       // scene layers
+['hook', 'prod', 'f1', 'f2', 'f3', 'num', 'sig'].forEach(k => S[k] = layer(cam));
+const fx = layer(cam);              // ripples
+const cursor = el('div', 'abs', cam,
+  '<svg width="52" height="72" viewBox="0 0 20 28"><path d="M1.5 1.5 L1.5 22.5 L6.7 17.6 L10.2 26 L13.8 24.4 L10.4 16.3 L17.4 16.3 Z" fill="#fff" stroke="#10151c" stroke-width="1.5" stroke-linejoin="round"/></svg>');
+cursor.style.filter = 'drop-shadow(0 6px 10px rgba(0,0,0,.35))';
+cursor.style.transformOrigin = '0 0';
+const bars = layer(stage), flash = el('div', 'layer', stage), iris = el('div', 'layer', stage);
+flash.style.background = '#fff'; iris.style.background = '#fff';
+
+// ---------- HOOK (0 – 3s) : "O CAMPO NÃO PODE ESPERAR." ----------
+const hk = {size: V ? 205 : 250};
+const hookLines = V ? [['O', 'CAMPO'], ['NÃO'], ['PODE']] : [['O', 'CAMPO'], ['NÃO', 'PODE']];
+const hookTimes = {O: 0, CAMPO: .5, 'NÃO': 1, PODE: 1.5};
+const hookWords = [];
+hookLines.forEach((ln, i) => {
+  const d = el('div', 'line', S.hook);
+  d.style.cssText += `font-size:${hk.size}px;font-weight:900;color:#fff;letter-spacing:-.02em;`;
+  const gapY = V ? 250 : 290;
+  d.style.top = (H / 2 + (i - (hookLines.length - 1) / 2) * gapY - hk.size * .55) + 'px';
+  ln.forEach(w => {
+    const s = el('span', null, d, w);
+    if (w === 'NÃO') s.style.cssText = `background:${C.red};padding:0 .14em;border-radius:.06em`;
+    if (d.children.length > 1) s.style.transformOrigin = '0% 60%';
+    hookWords.push({e: s, t: hookTimes[w], w, line: i, grow: d.children.length > 1});
+  });
+});
+const esperar = text('ESPERAR.', 300, 900, '#fff', S.hook, 'letter-spacing:-.03em');
+const hookStripes = el('div', 'layer', S.hook);
+hookStripes.style.cssText += 'opacity:.07;background:repeating-linear-gradient(-60deg,#fff 0 2px,transparent 2px 120px)';
+S.hook.insertBefore(hookStripes, S.hook.firstChild);
+
+function hook(t) {
+  show(S.hook, t < 3.05);
+  hookStripes.style.transform = `translateX(${-t * 90}px)`;
+  hookStripes.style.display = t < 2 ? '' : 'none';
+  // a line starts centred on its first word and slides as the second word lands
+  const shift = {};
+  hookWords.forEach(w => { if (w.grow) { w.nat = w.nat || ow(w.e) + hk.size * .22; shift[w.line] = w.nat / 2 * (1 - ioCub(P(t, w.t, w.t + .2))); } });
+  hookWords.forEach(w => {
+    const k = slam(t, w.t, .3, 2.4);
+    w.e.style.opacity = t < 2 ? k.o : 0;
+    w.e.style.transform = `translateX(${shift[w.line] || 0}px) scale(${k.s}) translateY(${(1 - oExpo(P(t, w.t, w.t + .3))) * 40}px)`;
+    w.e.style.filter = k.b > .3 ? `blur(${k.b}px)` : '';
+    if (w.w === 'NÃO') w.e.style.clipPath = `inset(0 ${(1 - oExpo(P(t, 1, 1.14))) * 100}% 0 0)`;
+  });
+  if (t >= 2) {
+    const fit = (V ? .9 : .88) * W / ow(esperar);
+    const k = slam(t, 2, .32, 1.5);
+    const zp = iExpo(P(t, 2.6, 3.0));
+    set(esperar, {x: W / 2, y: H / 2 + (V ? 0 : 10), s: fit * k.s * Math.exp(zp * Math.log(22)),
+      sx: 1 + .05 * oCub(P(t, 2.5, 2.62)), o: k.o * (1 - P(t, 2.9, 3.0)), b: k.b + zp * 24});
+  } else set(esperar, {o: 0});
+}
+
+// ---------- PRODUCT (3 – 6s) : App Araguaia se monta ----------
+const LP = V ? {
+  phone: {x: 540, y: 590, k: 1.42},
+  chegou: {x: 540, y: 1085, k: 1.4}, titulo: {x: 540, y: 1205, k: 1.4},
+  tag: {x: 540, y: 1440, k: 1.3}, qr: {x: 540, y: 1740, k: 1.12}, comece: {x: 540, y: 1885, k: 1.12}
+} : {
+  phone: {x: 590, y: 545, k: 1.52},
+  chegou: {x: 1400, y: 205, k: 1.32}, titulo: {x: 1400, y: 320, k: 1.32},
+  tag: {x: 1400, y: 545, k: 1.3}, qr: {x: 1400, y: 862, k: 1.12}, comece: {x: 1400, y: 1018, k: 1.12}
+};
+const phone = piece('app-celular.png', 515, 520, S.prod);
+phone.style.borderRadius = '28px';
+const pc = {
+  chegou: piece('app-chegou-o.png', 415, 82, S.prod), titulo: piece('app-titulo.png', 415, 91, S.prod),
+  tag: piece('app-tagline.png', 415, 230, S.prod), qr: piece('app-qr.png', 345, 220, S.prod),
+  comece: piece('app-comece.png', 360, 40, S.prod)
+};
+pc.comece.style.borderRadius = '8px';
+const pcIn = {chegou: 3.5, titulo: 3.75, tag: 4.0, qr: 4.5, comece: 4.75};
+// F1 layout for the phone (match-cut continues the same element)
+const LF1 = V ? {x: 540, y: 690, k: 1.95} : {x: 560, y: 410, k: 2.08};
+function phoneState(t) {
+  const A = LP.phone;
+  if (t < 5.5) {
+    const p = P(t, 3.0, 3.5), e = oBack(p, 1.4);
+    const drift = P(t, 3.5, 5.5);
+    return {x: A.x + (V ? 0 : -drift * 14), y: lerp(A.y + H * .9, A.y, e) - drift * 10,
+      s: A.k * lerp(.55, 1, e) * (1 + .03 * drift), r: lerp(22, 0, e), b: (1 - oExpo(p)) * 10};
+  }
+  const p = ioCub(P(t, 5.5, 6.1));
+  return {x: lerp(A.x - (V ? 0 : 14), LF1.x, p), y: lerp(A.y - 10, LF1.y, p), s: lerp(A.k * 1.03, LF1.k, p), r: 0,
+    b: Math.sin(p * Math.PI) * 6};
+}
+function prod(t) {
+  show(S.prod, t >= 2.95 && t < 8.55);
+  set(phone, phoneState(t));
+  Object.entries(pc).forEach(([k, e], i) => {
+    const A = LP[k], ti = pcIn[k];
+    const p = P(t, ti, ti + .32), e1 = oExpo(p), eb = oBack(p, 2);
+    let o = {x: A.x, y: A.y, s: A.k, o: t < ti ? 0 : P(t, ti, ti + .05)};
+    if (k === 'chegou') { o.x += (1 - e1) * W * .45; o.b = (1 - e1) * 30; o.sx = 1 + (1 - e1) * .6; }
+    if (k === 'titulo') { o.s *= lerp(1.9, 1, e1); o.b = (1 - e1) * 14; }
+    if (k === 'tag') e.style.clipPath = `inset(0 ${(1 - e1) * 100}% 0 0 round 16px)`;
+    if (k === 'qr') { o.s *= lerp(0, 1, eb); o.r = (1 - eb) * -14; }
+    if (k === 'comece') { o.y += (1 - e1) * 80; }
+    // fly out toward the right (landscape) / bottom (vertical), staggered
+    const q = iExpo(P(t, 5.45 + i * .04, 5.85 + i * .04));
+    if (V) o.y += q * H * .8; else o.x += q * W * .7;
+    o.b = (o.b || 0) + q * 30;
+    if (t > 6.1) o.o = 0;
+    set(e, o);
+  });
+}
+
+// ---------- F1 (6 – 8.5s) : Pedidos · Faturas · NFe ----------
+// tap targets in app-celular.png pixel coords (from the real print)
+const TAP = {Pedidos: [317, 493], Faturas: [398, 488], NFe: [477, 483]};
+const f1T = {Pedidos: 6.5, Faturas: 7.0, NFe: 7.5};
+function phonePt(px, py) { return [LF1.x + (px - 257.5) * LF1.k, LF1.y + (py - 260) * LF1.k]; }
+const f1Kick = text('NO APP ARAGUAIA', V ? 40 : 40, 700, C.app, S.f1, 'letter-spacing:.24em');
+const f1Labels = ['Pedidos', 'Faturas', 'NFe'].map(w => ({w, e: text(w.toUpperCase() === 'NFE' ? 'NFe' : w.toUpperCase(), V ? 150 : 150, 800, '#fff', S.f1, 'letter-spacing:-.02em')}));
+const f1X = V ? 540 : 1450;
+const f1Y = V ? [1380, 1550, 1720] : [420, 590, 760];
+function f1(t) {
+  show(S.f1, t >= 5.9 && t < 8.55);
+  const k = slam(t, 6.05, .3, 1.4);
+  set(f1Kick, {x: f1X, y: V ? 1250 : 285, s: k.s, o: k.o, b: k.b});
+  f1Labels.forEach((L, i) => {
+    const ti = f1T[L.w], k = slam(t, ti, .26, 2.2);
+    const next = [6.5, 7.0, 7.5][i + 1];
+    const dim = next && t > next ? .32 : 1;
+    set(L.e, {x: f1X, y: f1Y[i], s: k.s, o: k.o * dim, b: k.b});
+  });
+}
+
+// ---------- F2 (8.5 – 11s) : Assistência Técnica — a página rola e a foto salta para a tela ----------
+const LF2 = V ? {cx: 540, cy: 980, k: .926, vh: 1500} : {cx: 960, cy: 540, k: .8, vh: 980};
+const f2card = el('div', 'abs card', S.f2);
+f2card.style.width = 1080 * LF2.k + 'px'; f2card.style.height = LF2.vh + 'px';
+const f2inner = el('div', null, f2card); f2inner.style.cssText = 'position:absolute;left:0;top:0;width:100%';
+el('img', null, f2inner).src = R + 'assist-pagina.png';
+// foto-agricultura.png = assist-pagina crop rows 1028..1553, cols 0..840
+const AG = {x: 0, y: 1028, w: 840, h: 525};
+const SC = V ? 480 : 678;
+function f2scroll(t) { const p = P(t, 8.72, 9.2); return SC * (1 - Math.pow(1 - p, 4)); }
+function photo(src, parent) {
+  const d = el('div', 'abs', parent); d.style.overflow = 'hidden'; d.style.transformOrigin = '0 0';
+  const i = el('img', null, d); i.src = R + src;
+  i.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;transform-origin:50% 45%';
+  return d;
+}
+const fAg = photo('foto-agricultura.png', S.f2);
+const fPe = photo('foto-pecuaria.png', S.f2);
+const seam = el('div', 'abs', S.f2); seam.style.cssText += `width:${W}px;height:${H}px;background:${C.leaf};transform-origin:0 0`;
+S.f2.insertBefore(seam, fPe);  // green seam sits under the pecuária photo
+const shade = el('div', 'abs', S.f2);
+shade.style.cssText += `width:${W}px;height:${H}px;transform-origin:0 0;background:linear-gradient(180deg,rgba(6,19,49,0) 45%,rgba(6,19,49,.75) 100%)`;
+const tA = text('ASSISTÊNCIA', V ? 120 : 132, 800, '#fff', S.f2, 'letter-spacing:-.02em');
+const tB = text('TÉCNICA', V ? 120 : 132, 800, C.leaf, S.f2, 'letter-spacing:-.02em');
+const lAg = text('AGRICULTURA', V ? 86 : 78, 800, '#fff', S.f2, 'letter-spacing:.02em;text-shadow:0 6px 30px rgba(0,0,0,.55)');
+const lPe = text('PECUÁRIA', V ? 86 : 78, 800, '#fff', S.f2, 'letter-spacing:.02em;text-shadow:0 6px 30px rgba(0,0,0,.55)');
+function whip(t, tin, tout) {
+  const a = (1 - oExpo(P(t, tin, tin + .38))) * W * .9;
+  const b = -iExpo(P(t, tout, tout + .26)) * W * 1.3;
+  return {dx: a + b, blur: (1 - oExpo(P(t, tin, tin + .38))) * 28 + iExpo(P(t, tout, tout + .26)) * 36};
+}
+function f2Pt(px, py, scr) { return [LF2.cx - 540 * LF2.k + px * LF2.k, LF2.cy - LF2.vh / 2 + (py - scr) * LF2.k]; }
+function rect(e, x, y, w, h) { Object.assign(e.style, {width: w + 'px', height: h + 'px', transform: `translate(${x}px,${y}px)`}); }
+// split polygons: agricultura keeps the first part, pecuária slides in on a diagonal (site's diagonal cut)
+function splitPoly(p, gap) {
+  if (!V) { const a = lerp(W * 1.15, W * .6, p) + gap, b = lerp(W * 1.0, W * .46, p) + gap; return [[a, 0], [W, 0], [W, H], [b, H]]; }
+  const a = lerp(H * 1.1, H * .58, p) + gap, b = lerp(H * 1.0, H * .44, p) + gap; return [[0, b], [W, a], [W, H], [0, H]];
+}
+const poly = pts => `polygon(${pts.map(([x, y]) => `${x}px ${y}px`).join(',')})`;
+function f2(t) {
+  show(S.f2, t >= 8.45 && t < 11.1);
+  const w = whip(t, 8.5, 10.82);
+  const scr = f2scroll(t), vel = Math.abs(f2scroll(t + 1 / 60) - scr) * LF2.k;
+  const lift = ioCub(P(t, 9.18, 9.55));
+  set(f2card, {x: LF2.cx + w.dx, y: LF2.cy, b: w.blur, s: 1 - lift * .12, o: t < 9.6 ? 1 - lift : 0});
+  f2inner.style.transform = `translateY(${-scr * LF2.k}px)`;
+  f2inner.style.filter = vel > .6 ? `blur(${Math.min(vel * .18, 9)}px)` : '';
+  // agricultura photo: from its spot in the scrolled page to full frame
+  const [x0, y0] = f2Pt(AG.x, AG.y, SC);
+  show(fAg, t >= 9.18);
+  rect(fAg, lerp(x0, 0, lift) + w.dx, lerp(y0, 0, lift), lerp(AG.w * LF2.k, W, lift), lerp(AG.h * LF2.k, H, lift));
+  fAg.style.borderRadius = (1 - lift) * 18 + 'px';
+  fAg.style.filter = w.blur > .3 ? `blur(${w.blur}px)` : '';
+  fAg.firstChild.style.transform = `translateY(${V ? -oExpo(P(t, 9.72, 10.1)) * H * .3 : 0}px) scale(${1 + .1 * P(t, 9.2, 11)})`;
+  // diagonal split with pecuária
+  const sp = oExpo(P(t, 9.72, 10.1));
+  const gapPx = 16;
+  show(fPe, t >= 9.72); show(seam, t >= 9.72);
+  // vertical: pecuária lives in the lower box only, so it is not over-zoomed
+  const py0 = V ? H * .4 : 0, shiftPts = pts => pts.map(([x, y]) => [x, y - py0]);
+  [fPe, seam].forEach(e => { rect(e, w.dx, py0, W, H - py0); e.style.filter = w.blur > .3 ? `blur(${w.blur}px)` : ''; });
+  fPe.style.clipPath = poly(shiftPts(splitPoly(sp, gapPx)));
+  seam.style.clipPath = poly(shiftPts(splitPoly(sp, 0)));
+  fPe.firstChild.style.objectPosition = V ? '55% 35%' : '62% 40%';
+  fPe.firstChild.style.transform = `scale(${1.08 - .08 * P(t, 9.72, 11)}) translateX(${(1 - sp) * (V ? 0 : 120)}px)`;
+  // title over the full-frame photo, then one word per side
+  show(shade, t >= 9.2); shade.style.opacity = lift; shade.style.transform = `translateX(${w.dx}px)`;
+  const out = iExpo(P(t, 9.62, 9.82));
+  [[tA, 9.3, V ? H * .72 : H * .68], [tB, 9.4, V ? H * .79 : H * .81]].forEach(([e, ti, y]) => {
+    const k = slam(t, ti, .3, 1.8);
+    set(e, {x: W / 2 - out * W, y, s: k.s, o: k.o, b: k.b + out * 30});
+  });
+  const k1 = slam(t, 9.88, .3, 1.8), k2 = slam(t, 10.08, .3, 1.8);
+  set(lAg, {x: (V ? W / 2 : W * .25) + w.dx, y: V ? H * .1 : H * .86, s: k1.s, o: k1.o, b: k1.b + w.blur});
+  set(lPe, {x: (V ? W / 2 : W * .76) + w.dx, y: V ? H * .9 : H * .86, s: k2.s, o: k2.o, b: k2.b + w.blur});
+}
+
+// ---------- F3 (11 – 13.5s) : Portfólio completo, produtos de qualidade ----------
+// categorias citadas no próprio site (Nossa História, Parques Industriais, Pecuária)
+const LF3 = V ? {ty: [250, 380], ts: 124, bag: {x: 540, y: 1090, k: 2.7}, rx: 215, ry: 570, seal: {x: 780, y: 1340, s: 1.25}, chip: 44}
+              : {ty: [150, 150], ts: 112, bag: {x: 960, y: 610, k: 2.15}, rx: 640, ry: 330, seal: {x: 1150, y: 770, s: 1.05}, chip: 42};
+const f3bg = photo('foto-fabrica.png', S.f3);
+const f3tint = el('div', 'abs', S.f3);
+f3tint.style.cssText += `width:${W}px;height:${H}px;transform-origin:0 0;background:radial-gradient(90% 80% at 50% 55%, rgba(8,26,66,.55) 0%, rgba(4,14,38,.9) 100%)`;
+const pT = [['PORTFÓLIO', '#fff'], ['COMPLETO', C.leaf]].map(([w, c]) => text(w, LF3.ts, 900, c, S.f3, 'letter-spacing:-.02em'));
+const bag = el('div', 'abs', S.f3); bag.style.cssText += 'width:238px;height:214px;z-index:5;filter:drop-shadow(0 34px 40px rgba(0,0,0,.45))';
+const bagImg = el('img', null, bag); bagImg.src = R + 'sacaria.png'; bagImg.style.cssText = 'width:100%;border-radius:10px;display:block';
+const CATS = ['FERTILIZANTES', 'SEMENTES', 'NUTRIÇÃO ANIMAL', 'DEFENSIVOS', 'VETERINÁRIOS'];
+const chips = CATS.map((c, i) => {
+  const e = text(c, LF3.chip, 700, C.navy, S.f3, `background:#fff;padding:.42em .9em;border-radius:999px;letter-spacing:.06em;box-shadow:0 14px 30px -8px rgba(0,0,0,.45)`);
+  const dot = el('span', null, null); dot.style.cssText = `display:inline-block;width:.5em;height:.5em;border-radius:50%;background:${C.leaf};margin-right:.5em;vertical-align:.08em`;
+  e.prepend(dot); return e;
+});
+const seal = el('div', 'abs', S.f3,
+  `<svg width="250" height="250" viewBox="-125 -125 250 250">
+    <defs><path id="ring" d="M 0 -86 A 86 86 0 1 1 -0.1 -86"/></defs>
+    <circle r="122" fill="${C.leaf}"/><circle r="110" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="2 7"/>
+    <circle r="62" fill="#fff"/>
+    <text fill="#fff" font-family="Poppins" font-weight="800" font-size="21"><textPath href="#ring" textLength="528" lengthAdjust="spacing">QUALIDADE · ARAGUAIA · QUALIDADE · ARAGUAIA ·</textPath></text>
+    <image href="${R}folha-solo.png" x="-44" y="-33" width="88" height="63"/></svg>`);
+seal.style.zIndex = 7;
+const CLICK3 = 11.55;
+function f3(t) {
+  show(S.f3, t >= 10.9 && t < 13.55);
+  const w = whip(t, 10.95, 99);
+  // aerial photo of the real plant, pushing in
+  rect(f3bg, w.dx, 0, W, H);
+  f3bg.firstChild.style.transform = `scale(${lerp(1.3, 1.06, oCub(P(t, 10.95, 13.5)))})`;
+  f3bg.style.filter = `blur(${(V ? 3 : 1.5) + w.blur}px)`;
+  rect(f3tint, w.dx, 0, W, H);
+  pT.forEach((e, i) => {
+    const k = slam(t, 11.05 + i * .12, .3, 2);
+    set(e, {x: (V ? W / 2 : (i ? W / 2 + 22 + ow(e) / 2 : W / 2 - 22 - ow(e) / 2)) + w.dx, y: LF3.ty[i], s: k.s, o: k.o, b: k.b + w.blur});
+  });
+  // the real bag drops in, gets clicked, squashes
+  const pd = P(t, 11.25, 11.6), squash = Math.exp(-Math.max(0, t - CLICK3) * 12) * (t >= CLICK3 ? 1 : 0);
+  const B = LF3.bag;
+  set(bag, {x: B.x + w.dx, y: lerp(B.y - H * .8, B.y, oBack(pd, 1.3)) + Math.sin(t * 3.2) * 8, s: B.k,
+    sx: 1 + squash * .12, sy: 1 - squash * .14, r: (1 - oExpo(pd)) * 25 + Math.sin(t * 2.1) * 2, o: t >= 11.25 ? 1 : 0});
+  // categories burst out of the bag and orbit
+  chips.forEach((e, i) => {
+    const tc = CLICK3 + .05 + i * .07, p = oBack(P(t, tc, tc + .4), 1.6);
+    const ang = (-90 + i * 72 + (t - CLICK3) * 34) * Math.PI / 180;
+    const sn = Math.sin(ang);
+    e.style.zIndex = sn > -.2 ? 6 : 4;
+    set(e, {x: B.x + Math.cos(ang) * LF3.rx * p + w.dx, y: B.y + sn * LF3.ry * p, s: p * (.88 + .12 * sn), o: t >= tc ? Math.min(1, P(t, tc, tc + .08)) * (.75 + .25 * (sn + 1) / 2) : 0});
+  });
+  // quality seal stamps in on the beat
+  const ps = P(t, 12.5, 12.72);
+  set(seal, {x: LF3.seal.x + w.dx, y: LF3.seal.y, s: LF3.seal.s * lerp(3.2, 1, oExpo(ps)), r: lerp(-40, -12, oExpo(ps)) + (t - 12.5) * 22,
+    o: t >= 12.5 ? P(t, 12.5, 12.56) : 0, b: (1 - oExpo(ps)) * 10});
+}
+
+// ---------- NUMBER (13.5 – 16.5s) : +60 lojas em 8 estados — 60 folhas brotam ----------
+const NL = 60, LT0 = 13.55, LT1 = 15.0, I0 = 24;
+const NR = V ? {r0: 340, r1: 600, sx: .95, sy: 1.55, ls: .62} : {r0: 300, r1: 560, sx: 1.6, sy: .95, ls: .55};
+const NC2 = (NR.r1 * NR.r1 - NR.r0 * NR.r0) / (NL - 1);
+const leaves = Array.from({length: NL}, (_, i) => { const e = el('img', 'abs', S.num); e.src = R + 'folha-solo.png'; return e; });
+const big = text('+0', V ? 300 : 300, 900, '#fff', S.num, 'letter-spacing:-.04em;font-variant-numeric:tabular-nums');
+const lojas = text('LOJAS', V ? 130 : 120, 800, C.leaf, S.num, 'letter-spacing:.02em');
+const estados = text('em 8 estados', V ? 64 : 58, 600, '#fff', S.num);
+const fonte = text('Fonte: araguaia.com.br · Nossa História', 26, 500, 'rgba(255,255,255,.6)', S.num, 'letter-spacing:.04em');
+function num(t) {
+  show(S.num, t >= 13.45 && t < 16.55);
+  const step = (LT1 - LT0) / NL;
+  const spin = 14 * ioCub(P(t, 15.2, 16.4));
+  leaves.forEach((e, i) => {
+    const n = I0 + i, r = Math.sqrt(NR.r0 * NR.r0 + NC2 * i), th = n * 137.508 + spin;
+    const a = th * Math.PI / 180;
+    const ti = LT0 + i * step, p = P(t, ti, ti + .3);
+    const wave = Math.max(0, Math.sin(Math.PI * P(t, 15.0 + i * .006, 15.3 + i * .006)));
+    set(e, {x: W / 2 + Math.cos(a) * r * NR.sx, y: H / 2 + Math.sin(a) * r * NR.sy, s: NR.ls * oBack(p, 2.4) * (1 + .35 * wave),
+      r: th + 90 + (1 - oExpo(p)) * -60, o: t >= ti ? 1 : 0});
+  });
+  const n = Math.min(NL, Math.max(0, Math.floor((t - LT0) / step) + 1));
+  big.textContent = '+' + n;
+  const k = slam(t, LT0, .3, 1.6), land = oBack(P(t, LT1, LT1 + .25), 3);
+  const cy = H / 2;
+  set(big, {x: W / 2, y: cy - (V ? 70 : 60), s: k.s * (t > LT1 ? lerp(1.15, 1, land) : .82), o: k.o, b: k.b});
+  const k2 = slam(t, LT1, .3, 2), k3 = slam(t, LT1 + .25, .3, 1.5);
+  set(lojas, {x: W / 2, y: cy + (V ? 120 : 115), s: k2.s, o: k2.o, b: k2.b});
+  set(estados, {x: W / 2, y: cy + (V ? 215 : 200), s: k3.s, o: k3.o, b: k3.b});
+  set(fonte, {x: W / 2, y: V ? 1830 : 1035, o: P(t, 15.35, 15.6)});
+  const ex = iExpo(P(t, 16.1, 16.5));
+  S.num.style.transform = `scale(${1 - ex * .25})`; S.num.style.filter = ex > .02 ? `blur(${ex * 18}px)` : '';
+}
+
+// ---------- SIGNATURE (16.5 – 20s) : logo + araguaia.com.br ----------
+const LS = V ? {x: 540, y: 840, k: 1.62, dy: 235} : {x: 960, y: 455, k: 1.58, dy: 215};
+const logoW = 574 * LS.k, logoH = 163 * LS.k;
+const logoBox = el('div', 'abs', S.sig); logoBox.style.width = logoW + 'px'; logoBox.style.height = logoH + 'px';
+const LETTERS = [[6, 75], [81, 148], [155, 223], [229, 300], [308, 374], [380, 449], [460, 478], [486, 568]];
+const letterEls = LETTERS.map(([a, b]) => {
+  const d = el('div', null, logoBox);
+  d.style.cssText = `position:absolute;left:${(a - 3) * LS.k}px;top:0;width:${(b - a + 6) * LS.k}px;height:${logoH}px;` +
+    `background:url(${R}logo-lettering.png) no-repeat;background-size:${logoW}px ${logoH}px;background-position:-${(a - 3) * LS.k}px 0;transform-origin:50% 100%`;
+  return d;
+});
+const leaf = el('div', null, logoBox);
+leaf.style.cssText = `position:absolute;left:0;top:0;width:${logoW}px;height:${logoH}px;background:url(${R}logo-folha.png) no-repeat;background-size:100% 100%;transform-origin:${468.5 * LS.k}px ${87 * LS.k}px`;
+// little burst of leaves when the logo leaf sprouts (echo of the 60 leaves)
+const burst = Array.from({length: 16}, (_, i) => { const e = el('img', 'abs', S.sig); e.src = R + 'folha-solo.png'; return e; });
+const DOMAIN = 'araguaia.com.br';
+const dom = text('', V ? 70 : 64, 600, C.navy, S.sig, 'letter-spacing:.01em');
+const domMeasure = text(DOMAIN, V ? 70 : 64, 600, C.navy, S.sig, 'letter-spacing:.01em;visibility:hidden');
+const domLine = el('div', 'abs', S.sig); domLine.style.cssText += `height:7px;background:${C.leaf};border-radius:4px;transform-origin:0 50%`;
+const caret = el('div', 'abs', S.sig); caret.style.cssText += `width:5px;height:${V ? 76 : 70}px;background:${C.leaf}`;
+function sig(t) {
+  show(S.sig, t >= 16.3);
+  const z = 1 + .045 * ioCub(P(t, 17.2, 20));
+  S.sig.style.transform = `scale(${z})`;
+  set(logoBox, {x: LS.x, y: LS.y});
+  letterEls.forEach((d, i) => {
+    const ti = 16.52 + i * .05, p = P(t, ti, ti + .34);
+    d.style.opacity = P(t, ti, ti + .04);
+    d.style.transform = `translateY(${(1 - oExpo(p)) * 60}px) scale(${oBack(p, 2.4)})`;
+  });
+  const lp = P(t, 16.95, 17.4);
+  leaf.style.opacity = P(t, 16.95, 17.0);
+  leaf.style.transform = `rotate(${lerp(-38, 0, oBack(lp, 2)) + Math.sin((t - 17.4) * 3) * 1.2 * P(t, 17.4, 18)}deg) scale(${oBack(lp, 2.6)})`;
+  const bx = LS.x - logoW / 2 + 468.5 * LS.k, by = LS.y - logoH / 2 + 60 * LS.k;
+  burst.forEach((e, i) => {
+    const a = (i / burst.length) * Math.PI * 2 + .3, p = P(t, 17.0, 17.9), d = oExpo(p) * (V ? 420 : 380) * (.7 + .3 * ((i * 7) % 5) / 4);
+    set(e, {x: bx + Math.cos(a) * d, y: by + Math.sin(a) * d * .8 + p * p * 120, s: .38 * (1 - p * .5), r: a * 57.3 + 90 + p * 200,
+      o: t >= 17.0 && p < 1 ? 1 - p * p : 0});
+  });
+  const n = Math.floor(P(t, 17.5, 18.2) * DOMAIN.length + .001);
+  dom.textContent = DOMAIN.slice(0, n);
+  const dw = ow(domMeasure), dy = LS.y + LS.dy, cw = ow(dom);
+  set(domMeasure, {x: LS.x, y: dy});
+  set(dom, {x: LS.x - dw / 2 + cw / 2, y: dy, o: t >= 17.5 ? 1 : 0});
+  const blink = t < 18.2 || (Math.floor((t - 18.2) * 4) % 2 === 0 && t < 18.5);
+  set(caret, {x: LS.x - dw / 2 + cw + 8, y: dy, o: t >= 17.45 && blink ? 1 : 0});
+  domLine.style.width = dw + 'px';
+  set(domLine, {x: LS.x, y: dy + (V ? 58 : 52), sx: oExpo(P(t, 18.5, 18.85)), o: t >= 18.5 ? 1 : 0});
+}
+
+// ---------- background, deco lines, bars, iris ----------
+function bgAt(t) {
+  if (t < 2) return `radial-gradient(120% 90% at 50% 40%, #0b2050 0%, ${C.deep} 60%, #020814 100%)`;
+  if (t < 3) return C.red;
+  if (t < 8.5) return 'radial-gradient(110% 90% at 30% 45%, #0d2c6e 0%, #081a42 45%, #020817 100%)';
+  if (t < 13.5) return C.gray;
+  if (t < 16.5) return `radial-gradient(110% 100% at 50% 60%, #24497f 0%, ${C.navy} 45%, #0c1f3d 100%)`;
+  return '#fff';
+}
+let lastBg = '';
+// site motif: navy + green parallel curves
+deco.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="position:absolute;left:0;top:0">
+<path id="dn" d="M ${W * .62} ${-50} C ${W * .78} ${H * .35}, ${W * .55} ${H * .55}, ${W * .72} ${H * .78} S ${W * 1.02} ${H * 1.05}, ${W * 1.05} ${H * 1.1}" fill="none" stroke="${C.navy}" stroke-width="5"/>
+<path id="dg" d="M ${W * .66} ${-50} C ${W * .82} ${H * .35}, ${W * .59} ${H * .55}, ${W * .76} ${H * .78} S ${W * 1.06} ${H * 1.05}, ${W * 1.09} ${H * 1.1}" fill="none" stroke="${C.leaf}" stroke-width="5"/></svg>`;
+const decoPaths = [...deco.querySelectorAll('path')];
+decoPaths.forEach(p => { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.dataset.L = L; });
+function decoLines(t) {
+  show(deco, t >= 8.5 && t < 13.5);
+  decoPaths.forEach((p, i) => {
+    const L = +p.dataset.L;
+    p.style.strokeDashoffset = L * (1 - oCub(P(t, 8.55 + i * .08, 9.4 + i * .08)));
+  });
+  deco.style.opacity = .55;
+  deco.style.transform = V ? `translateX(${-W * .45}px)` : (t >= 11 ? 'scaleX(-1)' : '');
+}
+const barEls = [C.leaf, C.navy].map(c => { const b = el('div', 'bar', bars); b.style.background = c; return b; });
+const BW = W * 1.3 + H * .45;
+barEls.forEach(b => { b.style.width = BW + 'px'; });
+function barsAt(t) {
+  let any = false;
+  [[8.5, 1], [13.5, -1]].forEach(([tc, dir]) => {
+    if (t < tc - .32 || t > tc + .32) return;
+    any = true;
+    barEls.forEach((b, i) => {
+      const lag = (1 - i) * -.06;  // green leads
+      const p = ioCub(P(t, tc - .3 - lag, tc + .3 - lag));
+      const travel = W + BW + H * .5;
+      let cx = -BW / 2 - H * .25 + p * travel;
+      if (dir < 0) cx = W - cx;
+      b.style.transform = `translateX(${cx - BW / 2}px) skewX(${-20 * dir}deg)`;
+    });
+  });
+  show(bars, any);
+}
+function irisAt(t) {
+  const p = ioCub(P(t, 16.1, 16.5));
+  show(iris, p > 0 && t < 16.55);
+  iris.style.clipPath = `circle(${p * Math.hypot(W, H) * .55}px at 50% ${V ? 50 : 55}%)`;
+}
+function flashAt(t) {
+  const o = Math.max(1 - P(t, 3.0, 3.2), 0) * (t >= 3.0 ? 1 : 0) + (t >= 2 && t < 2.08 ? .5 * (1 - P(t, 2, 2.08)) : 0);
+  flash.style.opacity = o; show(flash, o > .01);
+}
+
+// ---------- cursor ----------
+// keyframes [t, x, y]; downs: [t0, t1] intervals the button is pressed
+const tp = n => phonePt(...TAP[n]);
+const CK = [], DOWN = [], RIP = [];
+function kf(t, xy) { CK.push([t, xy[0], xy[1]]); }
+// F1 taps
+kf(5.95, V ? [W + 60, H * .62] : [W + 60, H * .95]);
+kf(6.42, tp('Pedidos')); kf(6.55, tp('Pedidos'));
+kf(6.92, tp('Faturas')); kf(7.05, tp('Faturas'));
+kf(7.42, tp('NFe')); kf(7.6, tp('NFe'));
+kf(8.3, V ? [W * .8, H * .9] : [W * .78, H * 1.05]);
+['Pedidos', 'Faturas', 'NFe'].forEach(n => { DOWN.push([f1T[n], f1T[n] + .1]); RIP.push([f1T[n], ...tp(n), C.app]); });
+// F2 flick-scroll of the real page
+const grab = f2Pt(560, 1250, 0);
+kf(8.5, V ? [W * .8, H + 80] : [W * .7, H + 80]);
+kf(8.7, grab); kf(8.72, grab);
+kf(8.9, [grab[0], grab[1] - 300]); kf(9.5, [grab[0] + 260, H + 120]);
+DOWN.push([8.72, 8.9]);
+// F3 click on the real bag -> portfolio bursts out
+kf(11.2, V ? [W + 60, H * .8] : [W * .8, H + 80]);
+kf(11.5, [LF3.bag.x + 50, LF3.bag.y + 40]); kf(11.7, [LF3.bag.x + 50, LF3.bag.y + 40]);
+kf(12.4, V ? [W + 80, H * .95] : [W + 80, H * .98]);
+DOWN.push([CLICK3, CLICK3 + .1]);
+// SIGNATURE click on the domain
+kf(18.0, V ? [W + 60, H * .9] : [W + 60, H * .95]);
+kf(18.45, [LS.x + 140, LS.y + LS.dy + 10]); kf(18.62, [LS.x + 140, LS.y + LS.dy + 10]);
+kf(19.4, [LS.x + 260, LS.y + LS.dy + 150]);
+DOWN.push([18.5, 18.6]); RIP.push([18.5, LS.x + 140, LS.y + LS.dy + 10, C.leaf]);
+RIP.push([8.72, ...grab, C.leaf], [CLICK3, LF3.bag.x + 50, LF3.bag.y + 40, C.leaf]);
+const CURSOR_ON = [[5.95, 8.45], [8.5, 9.5], [11.2, 12.4], [18.0, 20]];
+function cursorAt(t) {
+  if (!CURSOR_ON.some(([a, b]) => t >= a && t <= b)) return null;
+  let x = CK[0][1], y = CK[0][2];
+  for (let i = 0; i < CK.length - 1; i++) {
+    const [ta, xa, ya] = CK[i], [tb, xb, yb] = CK[i + 1];
+    if (t >= ta && t <= tb) { const p = ioCub(P(t, ta, tb)); x = lerp(xa, xb, p); y = lerp(ya, yb, p); break; }
+    if (t > tb) { x = xb; y = yb; }
+  }
+  const down = DOWN.some(([a, b]) => t >= a && t <= b);
+  return {x, y, down};
+}
+const ripEls = RIP.map(([ti, x, y, c]) => { const r = el('div', 'abs ripple', fx); r.style.borderColor = c; return r; });
+
+// ---------- camera shake ----------
+const SHAKE = [[0, 7], [.5, 7], [1, 9], [1.5, 9], [2, 22], [3.0, 10], [6.5, 4], [7, 4], [7.5, 5], [11.6, 6], [12.5, 14], [15.0, 18], [17.0, 5]];
+function shake(t) {
+  let x = 0, y = 0;
+  SHAKE.forEach(([ti, a]) => { if (t >= ti && t < ti + .4) { const d = Math.exp(-(t - ti) * 14) * a; x += Math.sin((t - ti) * 95) * d; y += Math.cos((t - ti) * 71) * d; } });
+  return [x, y];
+}
+
+// ---------- seek ----------
+window.seek = function (t) {
+  const b = bgAt(t); if (b !== lastBg) { bg.style.background = b; lastBg = b; }
+  hook(t); prod(t); f1(t); f2(t); f3(t); num(t); sig(t);
+  decoLines(t); barsAt(t); irisAt(t); flashAt(t);
+  const [sx, sy] = shake(t); cam.style.transform = `translate(${sx}px,${sy}px)`;
+  const c = cursorAt(t);
+  if (c) { cursor.style.display = ''; cursor.style.transform = `translate(${c.x - 4}px,${c.y - 4}px) scale(${c.down ? .82 : 1})`; }
+  else cursor.style.display = 'none';
+  RIP.forEach(([ti, x, y], i) => {
+    const p = P(t, ti, ti + .5);
+    set(ripEls[i], {x, y, s: lerp(.15, 1.5, oExpo(p)), o: t >= ti && p < 1 ? 1 - p : 0});
+  });
+};
+
+// events consumed by the soundtrack generator (single source of truth)
+window.EVENTS = {
+  clicks: [6.5, 7.0, 7.5, 8.72, 8.9, 11.55, 18.5],
+  soft: [8.9],
+  whoosh: [[2.62, 3.0, 'zoom'], [3.38, 3.55, 's'], [3.62, 3.8, 's'], [3.88, 4.08, 's'], [5.45, 5.95, 'm'], [8.2, 8.62, 'L'],
+           [8.72, 9.18, 'scroll'], [9.18, 9.55, 'm'], [9.68, 10.05, 's'], [10.8, 11.15, 'L'], [11.1, 11.4, 's'], [11.58, 11.95, 'm'],
+           [13.2, 13.62, 'L'], [16.05, 16.5, 'L']],
+  impacts: [[0, .7], [.5, .7], [1, .8], [1.5, .8], [2, 1.0], [3.0, 1.0], [9.3, .45], [11.6, .5], [12.5, .85], [15.0, 1.0], [16.5, .9]],
+  pops: [4.5, 11.05, 16.52, 16.57, 16.62, 16.67, 16.72, 16.77, 16.82, 16.87, 16.95],
+  bag: [11.5],
+  chips: CATS.map((_, i) => CLICK3 + .05 + i * .07),
+  ticks: Array.from({length: 15}, (_, i) => 17.5 + i * (0.7 / 15)),
+  count: [13.55, 15.0]
+};
+window.READY = (async () => {
+  await Promise.all([400, 500, 600, 700, 800, 900].map(w => document.fonts.load(`${w} 100px Poppins`, 'AÃÉÊ+60')));
+  await document.fonts.ready;
+  const extra = ['logo-lettering.png', 'logo-folha.png'].map(f => { const i = new Image(); i.src = R + f; return i; });
+  await Promise.all([...document.images, ...extra].map(i => i.decode().catch(() => {})));
+  await new Promise(r => setTimeout(r, 50));
+  seek(0); return true;
+})();
+</script>
+</body>
+</html>
